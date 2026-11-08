@@ -5,11 +5,11 @@ import { clear } from "./dom.js";
 import { monthLabel, monthKey, fmtDateKey } from "./format.js";
 import { countedFromDate } from "./ledger-model.js";
 import { createYearPanel } from "./year-panel.js";
-import { timelineBounds, fractionToTime, timeToFraction, countsAt, monthsUpTo, SIM_RATE } from "./year-model.js";
+import { timelineBounds, fractionToTime, timeToFraction, countsAt, monthsUpTo, SIM_RATE, programColor, settledGlow } from "./year-model.js";
 import { toTrailPoints } from "../air/geo-bridge.js";
 import { yearShot, REGION_SHOT } from "./choreo.js";
 
-const REVEAL_S = 1.1, SETTLE_S = 2.6, GLOW = 0.42, SPAWN_BUDGET = 30, MAX_TRAILS = 2500;
+const REVEAL_S = 1.1, SETTLE_S = 2.6, SPAWN_BUDGET = 30, MAX_TRAILS = 2500;
 const ease = (x) => 1 - Math.pow(1 - x, 3);
 
 export function createYearMode(ctx) {
@@ -31,6 +31,7 @@ export function createYearMode(ctx) {
     const pending = new Set();
     let all = [];
     const shown = new Map(); // id -> { trail, t0, born, settled }
+    let lastDim = 0;
     const animating = new Set();
 
     const panel = createYearPanel(chrome.stage, {
@@ -61,9 +62,9 @@ export function createYearMode(ctx) {
       const id = `${row.hex}:${row.t0}`;
       if (shown.has(id) || shown.size >= MAX_TRAILS) return false;
       try {
-        const trail = world?.addTrail?.(`y:${id}`, toTrailPoints(geo, row.pts), { color: "#ff6a1a", glow: 1, width: 3 });
+        const trail = world?.addTrail?.(`y:${id}`, toTrailPoints(geo, row.pts), { color: programColor(row.program), glow: 1, width: 2.6 });
         const item = { trail, t0: row.t0, born: performance.now(), settled: !animate };
-        if (animate) animating.add(item); else { trail?.setProgress?.(1); trail?.setOpacity?.(GLOW); }
+        if (animate) animating.add(item); else { trail?.setProgress?.(1); trail?.setOpacity?.(settledGlow(shown.size + 1)); }
         shown.set(id, item);
         return true;
       } catch (err) { console.warn(`[year] trail failed: ${err?.message || err}`); return false; }
@@ -94,16 +95,24 @@ export function createYearMode(ctx) {
       if (T < prevT - 1) { // scrubbed backwards: drop what has not happened yet
         for (const [id, it] of shown) if (it.t0 > T) { it.trail?.dispose?.(); animating.delete(it); shown.delete(id); }
         cursor = 0;
+        lastDim = -Infinity; // fewer trails now: re-brighten on the next frame
       }
       prevT = T;
       const animate = playing;
       for (let n = 0; cursor < all.length && all[cursor].t0 <= T && n < SPAWN_BUDGET; cursor++) {
         if (spawn(all[cursor], animate && T - all[cursor].t0 < SIM_RATE * 1.5)) n++;
       }
+      // As trails pile up, dim the settled ones so the painting never blows out to white.
+      if (shown.size - lastDim >= 40) {
+        lastDim = shown.size;
+        const g = settledGlow(shown.size);
+        for (const it of shown.values()) if (it.settled) it.trail?.setOpacity?.(g);
+      }
       for (const it of animating) {
         const age = (nowMs - it.born) / 1000;
         it.trail?.setProgress?.(ease(Math.min(1, age / REVEAL_S)));
-        it.trail?.setOpacity?.(age < REVEAL_S ? 1 : 1 - (1 - GLOW) * ease(Math.min(1, (age - REVEAL_S) / SETTLE_S)));
+        const g = settledGlow(shown.size);
+        it.trail?.setOpacity?.(age < REVEAL_S ? 1 : 1 - (1 - g) * ease(Math.min(1, (age - REVEAL_S) / SETTLE_S)));
         if (age > REVEAL_S + SETTLE_S) { it.settled = true; animating.delete(it); }
       }
       const f = timeToFraction(T, bounds);

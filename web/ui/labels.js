@@ -33,7 +33,11 @@ export function createLabels({ root, world, geo, ticker }) {
         const margin = 40;
         if (pr.visible && pr.x > margin && pr.x < innerWidth - margin && pr.y > 70 && pr.y < innerHeight - 60) {
           a = labelAlpha(Math.hypot(cp.x - p.x, cp.y - p.y, cp.z - p.z), it);
-          it.el.style.transform = `translate(${pr.x.toFixed(1)}px, ${pr.y.toFixed(1)}px)`;
+          // Near the right edge the text goes to the left of the pin so it is never clipped.
+          const w = it.w || (it.w = it.el.offsetWidth || 0);
+          const flip = pr.x + w > innerWidth - 12;
+          it.el.classList.toggle("flip", flip);
+          it.el.style.transform = `translate(${(flip ? pr.x - w + 10 : pr.x).toFixed(1)}px, ${pr.y.toFixed(1)}px)`;
         }
       }
       const v = a > 0.02 ? a.toFixed(2) : "0";

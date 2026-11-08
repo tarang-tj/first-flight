@@ -71,3 +71,12 @@ test("headline matches the contract wording", () => {
   const r = { isNewJet: true, callsign: "BOE603", from: "KRNT", to: "KBFI", t0, pts: [[0, 1, 1, 0], [1800, 1, 2, 0]] };
   assert.equal(headlineFor(r, now), "Latest new Boeing: BOE603, Renton to Boeing Field, 6 h ago");
 });
+
+import { settledGlow, programColor } from "../web/ui/year-model.js";
+test("year glow dims with trail count so 600 trails never blow out", () => {
+  assert.equal(settledGlow(10), 0.42);
+  assert.ok(settledGlow(600) < 0.12, `600 trails glow at ${settledGlow(600)}`);
+  assert.ok(settledGlow(600) * 600 < 0.42 * 600 / 3, "total light must grow much slower than the trail count");
+  assert.equal(settledGlow(1e9), 0.035);
+  assert.notEqual(programColor("737"), programColor("777"));
+});

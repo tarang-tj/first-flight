@@ -49,3 +49,16 @@ export function monthsUpTo(bounds, t) {
   }
   return out;
 }
+
+/** Trail colour per program, so the light painting reads as four production lines. */
+export const PROGRAM_COLORS = { "737": "#ff6a1a", "767": "#ffc94a", "777": "#5cd0ff", "777X": "#c58bff" };
+export const programColor = (p) => PROGRAM_COLORS[p] || "#ffe2c4";
+
+/**
+ * Opacity a settled trail glows at when `n` trails are on screen. Trails add
+ * light, so hundreds of them at a fixed opacity blow out to white over the
+ * Renton and Boeing Field corridor. Scale by 1/sqrt(n) past 40 trails, floor 0.035.
+ */
+export function settledGlow(n, base = 0.42) {
+  return Math.max(0.035, base * Math.sqrt(40 / Math.max(40, n)));
+}
