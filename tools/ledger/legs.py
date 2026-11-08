@@ -63,3 +63,36 @@ def program_of(born, types):
         if t in PROGRAM_BY_TYPE:
             return PROGRAM_BY_TYPE[t]
     return "unknown"
+
+
+def flight_span(path, pad_s=300):
+    """Indices (i0, i1) of the airborne part of a path: first to last point
+    above the ground, plus one ground point on each side when it is within
+    pad_s. A jet can sit on the ground transmitting for hours before takeoff;
+    that time is not flight time."""
+    air = [i for i, p in enumerate(path) if (p[3] or 0) > 0]
+    if not air:
+        return 0, len(path) - 1
+    i0, i1 = air[0], air[-1]
+    if i0 > 0 and path[i0][0] - path[i0 - 1][0] <= pad_s:
+        i0 -= 1
+    if i1 < len(path) - 1 and path[i1 + 1][0] - path[i1][0] <= pad_s:
+        i1 += 1
+    return i0, i1
+
+
+def flight_path(leg):
+    """The leg's path trimmed to its airborne span (or None without a path)."""
+    path = leg.get("path")
+    if not path:
+        return None
+    i0, i1 = flight_span(path)
+    return path[i0:i1 + 1]
+
+
+def flight_duration_s(leg):
+    """Airborne duration in seconds; falls back to end - start without a path."""
+    path = flight_path(leg)
+    if not path:
+        return leg.get("end", leg["start"]) - leg["start"]
+    return int(path[-1][0] - path[0][0])

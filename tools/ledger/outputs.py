@@ -4,7 +4,7 @@ import json
 import os
 from zoneinfo import ZoneInfo
 
-from .legs import airborne, is_boe
+from .legs import airborne, flight_duration_s, flight_path, is_boe
 
 LA = ZoneInfo("America/Los_Angeles")
 PROGRAMS = ["737", "767", "777", "777X"]
@@ -15,7 +15,7 @@ LATEST_N = 12
 NOTES = [
     "A first flight is the first airborne leg (above 1,500 ft) with a BOE callsign of an airframe not seen airborne before, departing KRNT or KPAE. Ground runs and altitude spikes never count.",
     "The first 30 days of history (exactly 30 days from the first scanned day, 00:00 UTC) are a warm-up: airframes first seen then are not counted, because we cannot tell new jets from old ones yet. A month that is only partly inside the warm-up is marked partial and says the date counting starts.",
-    "Months are Pacific time (America/Los_Angeles), the same clock as Boeing's reported months, so an evening flight on the last day of a month stays in that month.",
+    "Months are Pacific time (America/Los_Angeles), local time at the factories, so an evening flight on the last day of a month stays in that month.",
     "Jets whose type is not known yet (new Paine Field airframes are often untyped) are counted as 'unknown program'. They are real first flights and deliveries, shown separately, and are not part of any program's 737, 767, 777 or 777X count.",
     "Boeing's own flight-test fleet (for example N779X*, N2775x, N836BA, and typed Boeing-owned jets) is excluded from production counts.",
     "Program comes from the birth field and ICAO type code: Renton is 737; Paine Field jets use their type code, else 'unknown'. 737 MAX 10s at Paine Field are read as 737 because the 737 North Line in Everett began low-rate production in July 2026.",
@@ -132,7 +132,7 @@ def make_trails(pairs):
         if not leg.get("path"):
             continue
         by_month.setdefault(month_of(a["firstFlight"]["t"]), []).append(
-            {"hex": a["hex"], "program": a["program"], "t0": leg["path"][0][0], "pts": decimate(leg["path"])})
+            {"hex": a["hex"], "program": a["program"], "t0": flight_path(leg)[0][0], "pts": decimate(flight_path(leg))})
     return by_month
 
 
@@ -150,12 +150,13 @@ def make_latest(by_hex, airframes, pairs):
     out = []
     for g, hx in chosen:
         a = info[hx]
-        t0 = g["path"][0][0]
-        pts = [[int(p[0] - t0), round(p[1], 4), round(p[2], 4), int(p[3] or 0)] for p in g["path"]]
+        path = flight_path(g)
+        t0 = path[0][0]
+        pts = [[int(p[0] - t0), round(p[1], 4), round(p[2], 4), int(p[3] or 0)] for p in path]
         out.append({"hex": hx, "reg": a["reg"], "program": a["program"],
                     "callsign": next((c for c in g["callsigns"] if str(c).startswith("BOE")), None),
                     "from": g.get("from"), "to": g.get("to"), "t0": t0,
-                    "durationS": g["end"] - g["start"], "maxAltFt": max(p[3] for p in pts),
+                    "durationS": flight_duration_s(g), "maxAltFt": max(p[3] for p in pts),
                     "firstFlight": (hx, g["start"]) in firsts, "flightTest": a["flightTest"], "pts": pts})
     out.sort(key=lambda r: -r["t0"])
     return out

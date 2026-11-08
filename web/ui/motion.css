@@ -82,3 +82,6 @@ canvas#scene:active { cursor: grabbing; }
   .panel.is-compact .headline { font-size: 21px; }
   .map-label .txt { font-size: 10px; padding: 2px 6px; }
 }
+
+/* The ledger panel covers the map: hide map labels so they never sit on its text. */
+body[data-mode="ledger"] .label-layer { visibility: hidden; }
