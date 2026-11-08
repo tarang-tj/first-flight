@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FIRST FLIGHT world preview</title>
+<style>html,body{margin:0;height:100%;background:#05080c;overflow:hidden}canvas{width:100vw;height:100vh;display:block}
+#hud{position:fixed;left:12px;bottom:10px;font:12px "IBM Plex Mono",monospace;color:#9fb4c8}</style>
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js"}}</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="hud"></div>
+<script type="module">
+// Standalone mount used for development and capture: fake jets, fake trails, ?view= ?t= ?trails= ?weather=off
+import { createWorld } from "./index.js";
+import { toLocal } from "../geo.js";
+
+const q = new URLSearchParams(location.search);
+const world = createWorld(document.getElementById("scene"), { weather: q.get("weather") !== "off" });
+window.__world = world;
+
+const P = { paine: [47.9063, -122.2816], renton: [47.4931, -122.2158], bfi: [47.53, -122.3019], moses: [47.2077, -119.32] };
+const pt = ([la, lo], alt = 0) => toLocal(la, lo, alt);
+let seed = 11;
+const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+
+function path(from, to, wiggle, peak) {
+  const out = [], n = 60;
+  const a = pt(from, 0), b = pt(to, 0);
+  const side = (rnd() - 0.5) * wiggle, phase = rnd() * 6;
+  const nx = -(b.z - a.z), nz = b.x - a.x, nl = Math.hypot(nx, nz) || 1;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, bell = Math.sin(Math.PI * t);
+    const off = side * bell + Math.sin(t * 9 + phase) * wiggle * 0.1 * bell;
+    out.push({
+      x: a.x + (b.x - a.x) * t + (nx / nl) * off,
+      y: Math.max(a.y, b.y) + 40 + peak * Math.pow(bell, 0.8),
+      z: a.z + (b.z - a.z) * t + (nz / nl) * off, t,
+    });
+  }
+  return out;
+}
+
+const view = q.get("view") || "hero";
+const when = q.get("t") ? new Date(q.get("t")) : new Date("2026-11-08T21:30:00Z");
+world.setSun(when);
+world.setView(view, 0);
+if (q.get("cam")) { const [x, y, z, hd, pt, d] = q.get("cam").split(",").map(Number); world.snapTo({ target: { x, y, z }, distance: d, headingDeg: hd, pitchDeg: pt }); }
+if (q.get("weather") === "off") world.setWeather({ cloudCover: Number(q.get("cc") ?? 25), visibilityM: 40000, precip: 0 });
+
+world.ready.then(() => {
+  const j1 = world.addJet("a", "737"); j1.setPose({ x: -290, y: 3, z: 430 }, 340, 0, 0); j1.setHighlight("traffic");
+  const j2 = world.addJet("b", "777X"); j2.setPose({ x: 700, y: 3, z: -2050 }, 20, 0, 0); j2.setHighlight("test");
+  const j3 = world.addJet("c", "737-10"); j3.setPose({ x: -1200, y: 900, z: 3500 }, 330, 6, 18); j3.setHighlight("test");
+  const j4 = world.addJet("d", "767"); j4.setPose({ x: -2600, y: 1900, z: -4200 }, 200, 2, -12); j4.setHighlight("traffic");
+  const j5 = world.addJet("e", "777"); j5.setPose({ x: 1800, y: 600, z: 5200 }, 180, 4, 8); j5.setHighlight("selected");
+  const n = Number(q.get("trails") || 0);
+  const routes = [[P.paine, P.moses, 60000, 4000], [P.renton, P.bfi, 4000, 1500], [P.paine, P.renton, 9000, 3000], [P.renton, P.moses, 40000, 5000], [P.paine, P.bfi, 7000, 2500]];
+  const colors = ["#ff6a1a", "#ff8a3d", "#ffb36b", "#ff5a2a"];
+  const handles = [];
+  for (let i = 0; i < n; i++) {
+    const r = routes[Math.floor(rnd() * routes.length)];
+    handles.push(world.addTrail("t" + i, path(r[0], r[1], r[2], r[3] * (0.5 + rnd())), { color: colors[i % 4], glow: 1, width: Number(q.get("tw") || 0) }));
+  }
+  const demo = world.addTrail("latest", path(P.renton, P.bfi, 6000, 2200), { color: "#ff6a1a", glow: 1.4 });
+  demo.setProgress(1);
+  if (q.get("animate")) {
+    const t0 = performance.now();
+    world.onFrame(() => {
+      const k = ((performance.now() - t0) / 20000) % 1;
+      handles.forEach((h, i) => h.setProgress(Math.min(1, Math.max(0, k * 1.6 - (i % 7) * 0.05))));
+    });
+  }
+  if (q.get("chase")) world.chase(j3);
+  window.__ready = true;
+});
+const hud = document.getElementById("hud");
+let frames = 0, tPrev = performance.now();
+world.onFrame(() => {
+  frames++;
+  const now = performance.now();
+  if (now - tPrev > 1000) { hud.textContent = `${frames} fps`; window.__fps = frames; frames = 0; tPrev = now; }
+});
+</script>
+</body>
+</html>

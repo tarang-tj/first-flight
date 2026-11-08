@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>FIRST FLIGHT: every new Boeing jet over Puget Sound</title>
+  <meta name="description" content="Watch every new Boeing jet take its first flight over Puget Sound, then check the sky count against Boeing's own delivery numbers." />
+  <meta name="theme-color" content="#06080b" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="web/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="scene" aria-label="3D view of Puget Sound with Boeing test flights"></canvas>
+  <div id="ui-root"></div>
+  <noscript><p class="noscript">FIRST FLIGHT needs JavaScript and WebGL.</p></noscript>
+  <script type="module" src="web/main.js"></script>
+</body>
+</html>
