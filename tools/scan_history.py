@@ -155,6 +155,9 @@ def scan(stream, date):
                 continue
             blob = f.read()
             scanned += 1
+            # "~" ids are TIS-B/non-ICAO targets (often ground vehicles or GA): skip.
+            if "trace_full_~" in member.name:
+                continue
             # Brand-new airframes are often not in the aircraft database yet,
             # so they carry no type at all: keep untyped traces too.
             t = peek_type(blob)
