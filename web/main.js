@@ -9,6 +9,7 @@ import { createLedgerMode } from "./ui/ledger-mode.js";
 import { createRide } from "./ui/ride.js";
 import { renderJetCard, renderLiveCard } from "./ui/jet-card.js";
 import { clear, h } from "./ui/dom.js";
+import { hexOfPickId } from "./ui/format.js";
 import { createTicker } from "./air/ticker.js";
 import { loadLedger, loadLatest, loadAirframes, loadTrailMonth, normalizeLegs } from "./air/data.js";
 import { loadGeo } from "./air/geo-bridge.js";
@@ -112,7 +113,7 @@ async function boot() {
     let id = null;
     try { id = world?.pick?.(e.clientX, e.clientY) ?? null; } catch (err) { console.warn(`[main] pick failed: ${err?.message || err}`); }
     if (!id) return closeCard();
-    const hex = String(id).split(":").pop();
+    const hex = hexOfPickId(id);
     if (openAirframe(hex)) return;
     const ac = ctx.traffic?.aircraft(hex);
     if (ac) { clear(chrome.cardHost); renderLiveCard(chrome.cardHost, { ac, onClose: closeCard }); }

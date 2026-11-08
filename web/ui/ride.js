@@ -27,26 +27,60 @@ export function createRide(ctx) {
     return tr ? tr.pts : null;
   }
 
-  function stop(quiet = false) {
+  let seq = 0;          // start token: a newer start or any stop cancels an older pending start
+  let suspended = false; // this ride suspended the active mode and has not resumed it yet
+
+  function teardown() {
     if (!active) return;
     const s = active; active = null;
     s.off(); s.trail?.dispose?.(); s.jet?.dispose?.();
     camera.release();
     clear(s.bar); s.bar.remove();
-    if (!quiet) ctx.resumeMode?.();
+  }
+
+  function resume() {
+    if (!suspended) return;
+    suspended = false;
+    ctx.resumeMode?.();
+  }
+
+  /** quiet: the caller (a mode switch) takes care of the mode itself. */
+  function stop(quiet = false) {
+    seq++;
+    teardown();
+    if (quiet) suspended = false; else resume();
   }
 
   async function start(airframe, onMissing) {
-    stop(true);
-    const raw = await pathFor(airframe);
-    const pts = raw ? trimToFlight(raw) : null;
-    if (!pts || !world?.addJet) { onMissing?.(!pts ? "No recorded path for this jet." : "The 3D view is not available."); return; }
-    ctx.suspendMode?.();
+    teardown(); // keeps `suspended`: the previous ride already took the mode away
+    const my = ++seq;
+    let pts = null, why = "No recorded path for this jet.";
+    try {
+      const raw = await pathFor(airframe);
+      pts = raw ? trimToFlight(raw) : null;
+    } catch (err) { console.warn(`[ride] path failed: ${err?.message || err}`); }
+    if (my !== seq) return; // superseded while the path loaded
+    if (pts && !world?.addJet) { pts = null; why = "The 3D view is not available."; }
+    if (!pts) { resume(); onMissing?.(why); return; } // never leave an empty stage
+    if (!suspended) { suspended = true; ctx.suspendMode?.(); }
+    const made = { jet: null, trail: null, bar: null, off: null };
+    try {
+      build(pts, made, airframe);
+    } catch (err) { // a half-built ride must not leak a jet, trail, bar or frame callback
+      console.warn(`[ride] start failed: ${err?.message || err}`);
+      made.off?.(); made.trail?.dispose?.(); made.jet?.dispose?.(); made.bar?.remove();
+      camera.release();
+      resume();
+      onMissing?.("The ride could not start.");
+    }
+  }
+
+  function build(pts, made, airframe) {
     const dur = pathDuration(pts);
     const points = toTrailPoints(geo, pts);
-    const jet = world.addJet(`ride:${airframe.hex}`, airframe.program);
+    const jet = made.jet = world.addJet(`ride:${airframe.hex}`, airframe.program);
     jet.setHighlight?.("selected");
-    const trail = world.addTrail?.(`ride:${airframe.hex}`, points, { color: "#ff6a1a", glow: 1.1, width: 4 });
+    const trail = made.trail = world.addTrail?.(`ride:${airframe.hex}`, points, { color: "#ff6a1a", glow: 1.1, width: 4 });
     const chaseD = Math.min(700, Math.max(260, (jet.dims?.length || 60) * 6));
     let t = 0, speed = 10, playing = true, cur = null, lastHud = 0;
 
@@ -57,6 +91,7 @@ export function createRide(ctx) {
       h("div.ride-row", {}, h("span.kicker", { text: `Riding ${airframe.firstFlight.callsign || airframe.reg || airframe.hex}` })),
       h("div.ride-hud", { role: "status", "aria-live": "off" }, alt.el, spd.el, clock.el),
       h("div.ride-row", {}, playBtn, h("div.chips", {}, speedBtns), h("span.spacer"), h("button.btn", { type: "button", onclick: () => stop() }, "Exit ride")));
+    made.bar = bar;
     chrome.rideHost.append(bar);
 
     function sync() {
@@ -67,7 +102,7 @@ export function createRide(ctx) {
 
     camera.drive(() => cur, { snap: true, rate: 2.6 });
     camera.setFraming(...(innerWidth >= 820 ? [0, 0.08] : [0, 0.2]));
-    const off = ticker.add((dt, nowMs) => {
+    const off = made.off = ticker.add((dt, nowMs) => {
       if (playing) { t += dt * speed; if (t >= dur) { t = dur; playing = false; sync(); } }
       const s = samplePathSmooth(pts, t);
       if (!s) return;

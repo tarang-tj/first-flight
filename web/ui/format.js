@@ -52,8 +52,18 @@ export function fmtWhen(sec) {
   });
 }
 
+export const ZONE = "America/Los_Angeles";
+
+/** Calendar day in Pacific time, the same zone as fmtWhen and the month buckets. */
 export function fmtDay(sec) {
-  return new Date(sec * 1000).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" });
+  if (!Number.isFinite(sec)) return "unknown";
+  return new Date(sec * 1000).toLocaleDateString("en-US", { timeZone: ZONE, month: "short", day: "numeric", year: "numeric" });
+}
+
+/** "2026-11-05" (a calendar date, no zone) -> "Nov 5, 2026". */
+export function fmtDateKey(key) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(key ?? ""));
+  return m ? `${MONTHS[Number(m[2]) - 1] || "?"} ${Number(m[3])}, ${m[1]}` : "unknown";
 }
 
 /** "2025-03" -> "Mar 2025" */
@@ -62,9 +72,12 @@ export function monthLabel(key) {
   return `${MONTHS[Number(m) - 1] || "?"} ${y}`;
 }
 
+const MONTH_PARTS = new Intl.DateTimeFormat("en-US", { timeZone: ZONE, year: "numeric", month: "2-digit" });
+
+/** "YYYY-MM" of a moment in Pacific time (Boeing's months are local). */
 export function monthKey(sec) {
-  const d = new Date(sec * 1000);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  const parts = Object.fromEntries(MONTH_PARTS.formatToParts(new Date(sec * 1000)).map((p) => [p.type, p.value]));
+  return `${parts.year}-${parts.month}`;
 }
 
 /** Unix seconds at 00:00 UTC on the first day of "YYYY-MM". */
@@ -106,4 +119,10 @@ export function fmtClock(sec) {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
   const two = (n) => String(n).padStart(2, "0");
   return h ? `${h}:${two(m)}:${two(r)}` : `${m}:${two(r)}`;
+}
+
+/** World pick ids are "live:hex", "ride:hex" or "replay:hex:i": the hex is always the second part. */
+export function hexOfPickId(id) {
+  const parts = String(id ?? "").split(":");
+  return (parts.length > 1 ? parts[1] : parts[0]).toLowerCase();
 }

@@ -18,8 +18,8 @@ test("small formatters", () => {
   assert.equal(fmtDuration(4320), "1 h 12 min");
   assert.equal(fmtDuration(0), "unknown");
   assert.equal(monthLabel("2025-03"), "Mar 2025");
-  assert.equal(monthKey(monthStart("2026-02")), "2026-02");
-  assert.deepEqual(monthRange(monthStart("2025-11"), monthStart("2026-02")), ["2025-11", "2025-12", "2026-01", "2026-02"]);
+  assert.equal(monthKey(monthStart("2026-02") + 12 * 3600), "2026-02");
+  assert.deepEqual(monthRange(monthStart("2025-11") + 43200, monthStart("2026-02") + 43200), ["2025-11", "2025-12", "2026-01", "2026-02"]);
   assert.equal(airportName("KRNT"), "Renton");
   assert.equal(fmtAlt(24000), "24,000 ft");
 });
@@ -47,7 +47,7 @@ test("ledger: warm-up month is excluded; months without a reported figure are sk
   assert.equal(warmupEnd(ledger), Date.parse("2025-01-31T00:00:00Z") / 1000);
 });
 
-const af = (hex, program, t, flightTest = false) => ({ hex, program, flightTest, firstFlight: { t } });
+const af = (hex, program, t, flightTest = false) => ({ hex, program, flightTest, counted: !flightTest, firstFlight: { t } });
 test("year counters skip warm-up and the flight-test fleet", () => {
   const b = timelineBounds(ledger, 0);
   const air = [af("a", "737", Date.parse("2025-01-10T00:00:00Z") / 1000), af("b", "737", Date.parse("2025-02-10T00:00:00Z") / 1000),

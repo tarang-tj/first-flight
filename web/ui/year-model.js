@@ -12,7 +12,8 @@ export const SIM_RATE = AVG_MONTH_S / MONTH_REAL_S; // sim seconds per real seco
 export function timelineBounds(ledger, nowSec) {
   const first = ledger?.coverage?.firstDay;
   const last = ledger?.coverage?.lastDay;
-  const start = first ? Date.parse(`${first}T00:00:00Z`) / 1000 : monthStart("2025-01");
+  // 08:00 UTC is 00:00 PST / 01:00 PDT: still the same Pacific day, so month keys stay right.
+  const start = first ? Date.parse(`${first}T08:00:00Z`) / 1000 : monthStart("2025-01") + 12 * 3600;
   const end = last ? Date.parse(`${last}T23:59:59Z`) / 1000 : nowSec;
   return [start, Math.max(end, start + 86400)];
 }
@@ -21,14 +22,14 @@ export const fractionToTime = (f, [a, b]) => a + Math.min(1, Math.max(0, f)) * (
 export const timeToFraction = (t, [a, b]) => (b > a ? Math.min(1, Math.max(0, (t - a) / (b - a))) : 0);
 
 /**
- * New-jet first flights counted up to time t, per program. Flight-test fleet
- * aircraft are excluded, and so is the 30-day warm-up window.
+ * New-jet first flights counted up to time t, per program. Only airframes the
+ * ledger counts (counted: true) are included, so the numbers agree on screen.
  */
 export function countsAt(airframes, t, ledger, bounds) {
   const from = ledger ? warmupEnd(ledger) : bounds[0] + 30 * 86400;
   const out = Object.fromEntries(PROGRAMS.map((p) => [p, 0]));
   for (const a of airframes) {
-    if (a.flightTest || !(a.program in out)) continue;
+    if (a.counted !== true || !(a.program in out)) continue; // same rule as the ledger
     const ft = a.firstFlight?.t;
     if (ft >= from && ft <= t) out[a.program]++;
   }

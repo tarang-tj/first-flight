@@ -1,4 +1,4 @@
-// Is a live aircraft a Boeing test flight? A BOE callsign (Boeing's own flight-test
+// Is a live aircraft a Boeing production or test flight? A BOE callsign (Boeing's own flight-test
 // and delivery-flight prefix) or a Boeing-owned airframe. Everything else is traffic.
 
 const BOE_CALLSIGN = /^BOE\d/;

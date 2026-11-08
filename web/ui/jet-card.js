@@ -8,12 +8,23 @@ function row(label, value) {
   return h("div.row", {}, h("dt", { text: label }), h("dd", { text: value }));
 }
 
+/**
+ * Only a counted airframe is a new build whose first flight we watched. Anything
+ * else (warm-up history, flight-test fleet, airline jets) is just "first seen".
+ */
+export function recordKind(a) {
+  if (a?.counted === true) return { isNew: true, title: "Birth certificate", note: null };
+  if (a?.flightTest === true) return { isNew: false, title: "Aircraft record", note: "Boeing flight-test jet" };
+  return { isNew: false, title: "Aircraft record", note: "First seen in our data, not confirmed as a new build" };
+}
+
 export function airframeRows(a) {
   const ff = a.firstFlight || {};
   const since = Math.max(0, (a.flights || 1) - 1);
+  const isNew = recordKind(a).isNew;
   return [
-    ["Born at", a.born ? `${airportName(a.born)} (${a.born})` : "Unknown"],
-    ["First flight", fmtWhen(ff.t)],
+    [isNew ? "Born at" : "First seen at", a.born ? `${airportName(a.born)} (${a.born})` : "Unknown"],
+    [isNew ? "First flight" : "First seen in our data", fmtWhen(ff.t)],
     ["Route", routeText(ff.from, ff.to)],
     ["Flight time", fmtDuration(ff.durationS)],
     ["Highest point", fmtAlt(ff.maxAltFt)],
@@ -34,15 +45,16 @@ export function renderJetCard(host, { airframe: a, onRide, onClose }) {
   clear(host);
   const ff = a.firstFlight || {};
   const title = ff.callsign || a.reg || a.hex.toUpperCase();
-  const close = h("button.icon-btn", { type: "button", "aria-label": "Close birth certificate", onclick: onClose }, "×");
+  const kind = recordKind(a);
+  const close = h("button.icon-btn", { type: "button", "aria-label": `Close ${kind.title.toLowerCase()}`, onclick: onClose }, "×");
   const ride = h("button.btn.primary", { type: "button", onclick: onRide }, "Ride along");
-  const card = h("section.card", { role: "dialog", "aria-label": `Birth certificate for ${title}` },
+  const card = h("section.card", { role: "dialog", "aria-label": `${kind.title} for ${title}` },
     h("div.card-head", {},
       h("div", {},
-        h("p.kicker", { text: `Birth certificate · ${a.program}` }),
+        h("p.kicker", { text: `${kind.title} · ${a.program}` }),
         h("h2.card-title", { text: title })),
       close),
-    h("p.card-sub", { text: [a.reg, `ICAO ${a.hex.toUpperCase()}`].filter(Boolean).join(" · ") }),
+    h("p.card-sub", { text: [kind.note, a.reg, `ICAO ${a.hex.toUpperCase()}`].filter(Boolean).join(" · ") }),
     h("dl.rows", {}, airframeRows(a).map(([k, v]) => row(k, v))),
     h("div.card-actions", {}, ride));
   host.append(card);

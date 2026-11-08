@@ -1,8 +1,9 @@
-// A Year in Light: scrub or play Jan 2025 to now. Every first flight draws as a
+// A Year in Light: scrub or play the covered range. Every first flight draws as a
 // light trail in time order, then settles into a glow. Months load lazily.
 
 import { clear } from "./dom.js";
-import { monthLabel, monthKey } from "./format.js";
+import { monthLabel, monthKey, fmtDateKey } from "./format.js";
+import { countedFromDate } from "./ledger-model.js";
 import { createYearPanel } from "./year-panel.js";
 import { timelineBounds, fractionToTime, timeToFraction, countsAt, monthsUpTo, SIM_RATE } from "./year-model.js";
 import { toTrailPoints } from "../air/geo-bridge.js";
@@ -22,8 +23,9 @@ export function createYearMode(ctx) {
     const nowSec = Date.now() / 1000;
     const bounds = timelineBounds(data.ledger, nowSec);
     const [t0, t1] = bounds;
-    const startLabel = monthLabel(monthKey(t0));
-    const endLabel = monthLabel(monthKey(t1));
+    const cov = data.ledger?.coverage; // the real covered range, as dates
+    const startLabel = cov?.firstDay ? fmtDateKey(cov.firstDay) : monthLabel(monthKey(t0));
+    const endLabel = cov?.lastDay ? fmtDateKey(cov.lastDay) : monthLabel(monthKey(t1));
     let T = reduceMotion ? t1 : t0, prevT = T, playing = !reduceMotion, ramp = 0, cursor = 0, started = false, clockS = 0, lastN = -1;
     const loaded = new Map(); // month -> entries[]
     const pending = new Set();
@@ -32,7 +34,7 @@ export function createYearMode(ctx) {
     const animating = new Set();
 
     const panel = createYearPanel(chrome.stage, {
-      reduceMotion, startLabel, endLabel,
+      reduceMotion, startLabel, endLabel, countedFrom: data.ledger ? fmtDateKey(countedFromDate(data.ledger)) : null,
       onToggle: () => { if (T >= t1 - 1) { T = t0; prevT = T; } playing = !playing; ramp = 0; sync(); },
       onScrub: (f) => { playing = false; T = fractionToTime(f, bounds); ramp = 0; sync(); },
     });
@@ -110,7 +112,7 @@ export function createYearMode(ctx) {
       camera.step(dt);
     }));
 
-    my.dispose = () => { for (const it of shown.values()) it.trail?.dispose?.(); shown.clear(); animating.clear(); };
+    my.dispose = () => { panel.dispose(); for (const it of shown.values()) it.trail?.dispose?.(); shown.clear(); animating.clear(); };
   }
 
   function exit() {

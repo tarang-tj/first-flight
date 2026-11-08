@@ -15,7 +15,7 @@ function toMs(now) {
 /**
  * @param {object} o
  * @param {string|null} o.proxy  base URL of the proxy, or null
- * @param {(ac: object[], meta: {fetchedAt: number, ageMs: number}) => void} o.onUpdate
+ * @param {(ac: object[], meta: {fetchedAt: number, ageMs: number, feedAt: number}) => void} o.onUpdate
  * @param {(s: "live"|"offline"|"stale") => void} o.onStatus
  * @returns {{stop: () => void}}
  */
@@ -55,7 +55,7 @@ export function startLive({
       const ageMs = feedAt === null ? 0 : Math.max(0, at - feedAt);
       hadSuccess = true;
       emit(ageMs > STALE_AFTER_MS ? "stale" : "live");
-      onUpdate?.(body.ac, { fetchedAt: at, ageMs });
+      onUpdate?.(body.ac, { fetchedAt: at, ageMs, feedAt: feedAt ?? at });
     } catch (err) {
       delay = BACKOFF_MS;
       console.warn(`[live] feed failed, retrying in 60 s: ${err?.message || err}`);

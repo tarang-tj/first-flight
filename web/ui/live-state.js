@@ -7,14 +7,21 @@ export function badgeText(status, ageS) {
   return "live feed offline: showing recorded flights";
 }
 
+/** Seconds since the feed itself stamped the data (its own `now`), not since we received it. */
+export function ageSeconds(state, nowMs) {
+  const at = state.feedAt || state.fetchedAt;
+  return at ? Math.max(0, Math.round((nowMs - at) / 1000)) : 0;
+}
+
 export function createLiveState(setBadge) {
   const state = {
-    status: "offline", ac: [], fetchedAt: 0,
+    status: "offline", ac: [], fetchedAt: 0, feedAt: 0,
     listeners: new Set(),
     subscribe(fn) { state.listeners.add(fn); return () => state.listeners.delete(fn); },
     onUpdate(ac, meta) {
       state.ac = ac;
       state.fetchedAt = meta.fetchedAt;
+      state.feedAt = meta.feedAt ?? meta.fetchedAt;
       for (const fn of [...state.listeners]) {
         try { fn(ac, meta.fetchedAt); } catch (err) { console.warn(`[live] listener failed: ${err?.message || err}`); }
       }
@@ -23,7 +30,7 @@ export function createLiveState(setBadge) {
     onStatus(s) { state.status = s; paint(); },
   };
   function paint() {
-    const age = state.fetchedAt ? Math.max(0, Math.round((Date.now() - state.fetchedAt) / 1000)) : 0;
+    const age = ageSeconds(state, Date.now());
     setBadge(state.status, badgeText(state.status, age));
   }
   paint();

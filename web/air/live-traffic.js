@@ -1,4 +1,4 @@
-// Layer live aircraft on the world: Boeing test flights orange, all else dim white.
+// Layer live aircraft on the world: Boeing production and test flights orange, all else dim white.
 // Positions are dead-reckoned between 5 s polls from ground speed and track.
 
 import { classify, programFor } from "./classify.js";

@@ -27,7 +27,7 @@ export function axisLabel(month, step) {
 export function readoutText(r) {
   if (!r) return "";
   const rep = r.reported === null ? "no Boeing figure for this month" : `Boeing reported ${r.reported}`;
-  return `${monthLabel(r.month)}: ${r.seen} first ${r.seen === 1 ? "flight" : "flights"} seen, ${rep}${r.warmup ? " (warm-up, not counted)" : ""}`;
+  return `${monthLabel(r.month)}: ${r.seen} first ${r.seen === 1 ? "flight" : "flights"} seen, ${rep}${r.warmup ? (r.partial ? ` (partial month${r.countedFrom ? `, counted from ${r.countedFrom}` : ""}, not compared)` : " (warm-up, not counted)") : ""}`;
 }
 
 export function ledgerChart(program, series, label) {
@@ -76,7 +76,7 @@ export function ledgerChart(program, series, label) {
 
   const table = h("table.data", {},
     h("thead", {}, h("tr", {}, h("th", { scope: "col", text: "Month" }), h("th", { scope: "col", text: "Seen" }), h("th", { scope: "col", text: "Reported" }))),
-    h("tbody", {}, series.map((r) => h("tr", {}, h("th", { scope: "row", text: monthLabel(r.month) + (r.warmup ? " (warm-up)" : "") }), h("td", { text: r.seen }),
+    h("tbody", {}, series.map((r) => h("tr", {}, h("th", { scope: "row", text: monthLabel(r.month) + (r.partial ? " (partial)" : r.warmup ? " (warm-up)" : "") }), h("td", { text: r.seen }),
       h("td", {}, r.reported === null ? "none" : r.source ? h("a", { href: r.source, target: "_blank", rel: "noopener" }, String(r.reported)) : String(r.reported))))));
   return { chart, table };
 }

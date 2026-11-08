@@ -27,6 +27,7 @@ body { font: 15px/1.45 var(--mono); -webkit-font-smoothing: antialiased; text-si
 canvas#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
 #ui-root { position: fixed; inset: 0; pointer-events: none; }
 #ui-root > * { pointer-events: auto; }
+#ui-root > .label-layer, #ui-root > .load { pointer-events: none; } /* beat the rule above: map labels must never swallow clicks meant for the canvas or panels */
 .noscript { padding: 24px; }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
