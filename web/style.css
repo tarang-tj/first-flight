@@ -195,6 +195,8 @@ input.scrub::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; b
   .counter-val { font-size: 20px; }
   .counter-label { font-size: 13px; }
   .card-host { left: var(--pad); right: var(--pad); bottom: calc(var(--nav-h) + 8px + env(safe-area-inset-bottom)); z-index: 5; max-height: 70dvh; overflow-y: auto; }
+  /* On a phone the card sits over the live panel: hide the panel so its headline never ghosts through. */
+  body:has(.card-host .card) .panel.hero { visibility: hidden; }
   .card-title { font-size: 32px; }
   .row { grid-template-columns: 100px 1fr; font-size: 12.5px; padding: 5px 0; }
   .ride-host { left: var(--pad); right: var(--pad); bottom: calc(var(--nav-h) + 8px + env(safe-area-inset-bottom)); z-index: 6; }
