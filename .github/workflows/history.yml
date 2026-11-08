@@ -1,0 +1,98 @@
+name: scan-history
+# Scans adsb.lol globe_history days (about 3.4 GB each, ODbL 1.0) for Boeing
+# jets at Boeing's Washington airfields and commits the small per-day results
+# to data/history/. The archives stream through the scanner and are never
+# stored. Manual only.
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: First day (YYYY-MM-DD)
+        required: true
+      end:
+        description: Last day (YYYY-MM-DD)
+        required: true
+      chunk:
+        description: Days per job
+        default: "6"
+permissions:
+  contents: write
+concurrency:
+  group: scan-history
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      chunks: ${{ steps.p.outputs.chunks }}
+    steps:
+      - id: p
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import datetime as d, json
+          s = d.date.fromisoformat("${{ inputs.start }}"); e = d.date.fromisoformat("${{ inputs.end }}")
+          n = int("${{ inputs.chunk }}")
+          days = [(s + d.timedelta(i)).isoformat() for i in range((e - s).days + 1)]
+          chunks = [",".join(days[i:i + n]) for i in range(0, len(days), n)]
+          print("chunks=" + json.dumps(chunks))
+          EOF
+  scan:
+    needs: plan
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        days: ${{ fromJson(needs.plan.outputs.chunks) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan days
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p out
+          for day in $(echo "${{ matrix.days }}" | tr ',' ' '); do
+            y=${day%%-*}; tagday=$(echo "$day" | tr '-' '.')
+            repo="adsblol/globe_history_$y"
+            urls=""
+            for flavor in prod staging; do
+              urls=$(gh api "repos/$repo/releases/tags/v$tagday-planes-readsb-$flavor-0" --jq '[.assets[] | select(.name|test("\\.tar\\.a[a-z]$"))] | sort_by(.name) | map(.browser_download_url) | join(" ")' 2>/dev/null || true)
+              total=$(gh api "repos/$repo/releases/tags/v$tagday-planes-readsb-$flavor-0" --jq '[.assets[].size] | add' 2>/dev/null || echo 0)
+              if [ -n "$urls" ] && [ "${total:-0}" -gt 1000000000 ]; then echo "$day: $flavor ($total bytes)"; break; fi
+              urls=""
+            done
+            if [ -z "$urls" ]; then echo "$day: no usable release" ; echo "{\"date\":\"$day\",\"missing\":true}" > "out/$day.json"; continue; fi
+            if ( for u in $urls; do curl -fsSL --retry 5 --retry-delay 10 "$u" || exit 1; done ) | python3 tools/scan_history.py "$day" > "out/$day.json"; then
+              python3 -c "import json,sys;d=json.load(open('out/$day.json'));print(sys.argv[1], 'scanned', d['scanned'], 'boeing', d['boeing'], 'legs', len(d['legs']))" "$day"
+            else
+              echo "$day: scan failed"; echo "{\"date\":\"$day\",\"failed\":true}" > "out/$day.json"
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scan-${{ strategy.job-index }}
+          path: out/
+          retention-days: 7
+  collect:
+    needs: scan
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+          merge-multiple: true
+      - name: Commit results
+        run: |
+          for f in art/*.json; do
+            day=$(basename "$f" .json); y=${day%%-*}
+            mkdir -p "data/history/$y"
+            gzip -9 -n -c "$f" > "data/history/$y/$day.json.gz"
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/history
+          git commit -m "data: scan history ${{ inputs.start }} to ${{ inputs.end }}" || exit 0
+          for i in 1 2 3; do git pull --rebase -q && git push -q && break; sleep 5; done
