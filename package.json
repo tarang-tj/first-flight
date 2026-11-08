@@ -1,0 +1,6 @@
+{
+  "name": "first-flight",
+  "private": true,
+  "type": "module",
+  "license": "MIT"
+}
