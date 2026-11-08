@@ -3,6 +3,7 @@
 import { h } from "./dom.js";
 
 export const MODES = [
+  { key: "explore", label: "Explore", hint: "Fly anywhere, any moment since Jan 2025" },
   { key: "live", label: "Live", hint: "Latest Boeing flights" },
   { key: "year", label: "A Year in Light", hint: "Every first flight since Jan 2025" },
   { key: "ledger", label: "Ledger", hint: "Sky count vs Boeing's numbers" },

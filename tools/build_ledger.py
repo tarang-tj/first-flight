@@ -15,7 +15,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
 from ledger import airframes as af  # noqa: E402
-from ledger import history, outputs  # noqa: E402
+from ledger import history, outputs, sky  # noqa: E402
 
 
 def run(history_dir, out_dir, now=None, warmup_days=af.WARMUP_DAYS):
@@ -47,6 +47,15 @@ def run(history_dir, out_dir, now=None, warmup_days=af.WARMUP_DAYS):
         trails.setdefault(month, [])
     for month, items in trails.items():
         outputs.write_json(os.path.join(trails_dir, month + ".json"), items)
+
+    sky_dir = os.path.join(out_dir, "sky")
+    os.makedirs(sky_dir, exist_ok=True)
+    for stale in glob.glob(os.path.join(sky_dir, "*.json")):
+        os.remove(stale)
+    index, months = sky.make_sky(sky.sky_flights(by_hex, frames))
+    outputs.write_json(os.path.join(sky_dir, "index.json"), index)
+    for month, items in months.items():
+        outputs.write_json(os.path.join(sky_dir, month + ".json"), items)
     return ledger, frames
 
 

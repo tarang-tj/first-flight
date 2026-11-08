@@ -9,6 +9,7 @@ import { createSky } from "./sky.js";
 import { createJet, tickNavLights } from "./jets.js";
 import { createTrailSystem } from "./trails.js";
 import { createRig } from "./camera-rig.js";
+import { createFreeFly } from "./free-fly.js";
 import { startWeather } from "./weather.js";
 import { glowUniforms } from "./glow-points.js";
 import { sheenUniforms } from "./water-sheen.js";
@@ -39,6 +40,8 @@ export function createWorld(canvas, { onReady, dprCap, weather = true, tier: tie
   scene.add(terrain.group);
   const trails = createTrailSystem(scene, glowUniforms);
   const rig = createRig(camera, canvas, (x, z) => terrain.groundAt(x, z));
+  const freeFly = createFreeFly(camera, canvas, (x, z) => terrain.groundAt(x, z), rig);
+  rig.attachFreeFly(freeFly);
   const jets = new Map();
   const frameCbs = new Set();
   const state = { date: new Date(), cloudCover: 25, visibilityM: 30000, precip: 0, night: 0 };
@@ -107,6 +110,7 @@ export function createWorld(canvas, { onReady, dprCap, weather = true, tier: tie
   world.onFrame = (cb) => { frameCbs.add(cb); return () => frameCbs.delete(cb); };
   world.groundAt = (x, z) => terrain.groundAt(x, z);
   world.rig = rig;
+  world.freeFly = freeFly;
 
   attachProbe(world, { renderer, scene, camera, canvas, jets });
 
@@ -131,6 +135,7 @@ export function createWorld(canvas, { onReady, dprCap, weather = true, tier: tie
     resize();
     frameCbs.forEach((cb) => { try { cb(dt, clock); } catch (err) { console.warn("[world] onFrame callback threw", err.message); } });
     rig.update(dt);
+    freeFly.update(dt);
     applyFogHeight();
     camera.updateMatrixWorld();
     sheenUniforms.uSheenSun.value.set(state.sun.vector.x, state.sun.vector.y, state.sun.vector.z).transformDirection(camera.matrixWorldInverse);
@@ -150,7 +155,7 @@ export function createWorld(canvas, { onReady, dprCap, weather = true, tier: tie
     cancelAnimationFrame(raf);
     document.removeEventListener("visibilitychange", onVis);
     stopWeather();
-    rig.dispose(); trails.dispose(); sky.dispose(); terrain.dispose(); osm?.dispose();
+    rig.dispose(); freeFly.dispose(); trails.dispose(); sky.dispose(); terrain.dispose(); osm?.dispose();
     for (const { h } of jets.values()) h.dispose();
     world.disposeProbe(); renderer.dispose();
   };

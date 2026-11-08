@@ -19,6 +19,7 @@ const outDir = join(repoRoot, "artifacts");
 mkdirSync(outDir, { recursive: true });
 
 const MODES = [
+  ["explore", /(Boeing jets? in the air|Explore)/i],
   ["live", /(Latest new Boeing|recorded)/i],
   ["year", /(Year in Light|737)/i],
   ["ledger", /(production rate|deliveries)/i],
@@ -41,8 +42,10 @@ async function probe(browser, viewport, tag) {
   });
   await page.goto(`${base}/`, { waitUntil: "load" });
   await page.waitForFunction(() => window.__ff?.ready === true, null, { timeout: 60000 });
-  assert.equal(await page.evaluate(() => window.__ff.mode), "live", "default mode must be live");
+  assert.equal(await page.evaluate(() => window.__ff.mode), "explore", "default mode must be explore");
   assert.equal(await page.evaluate(() => window.__ff.ledgerLoaded), true, "ledger.json did not load");
+  await page.waitForFunction(() => (window.__ff.sky?.activeCount?.() || 0) > 0, null, { timeout: 30000 })
+    .catch(() => assert.fail(`${tag}: explore shows no jets in the air`));
   await page.waitForTimeout(3000);
   const lit = await page.evaluate(() => window.__ff.litFraction());
   assert.ok(lit > 0.02, `${tag}: canvas looks unpainted (lit fraction ${lit})`);
@@ -73,7 +76,7 @@ try {
     ...(await probe(browser, { width: 390, height: 844 }, "phone")),
   ];
   assert.deepEqual(errors, [], `errors during boot:\n${errors.join("\n")}`);
-  console.log("verify-boot: OK (desktop + phone, live/year/ledger, no errors)");
+  console.log("verify-boot: OK (desktop + phone, explore/live/year/ledger, no errors)");
 } finally {
   await browser.close();
   server.close();

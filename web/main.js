@@ -3,6 +3,7 @@
 
 import { PROXY } from "./config.js";
 import { createChrome } from "./ui/chrome.js";
+import { createExploreMode } from "./ui/explore-mode.js";
 import { createLiveMode } from "./ui/live-mode.js";
 import { createYearMode } from "./ui/year-mode.js";
 import { createLedgerMode } from "./ui/ledger-mode.js";
@@ -21,9 +22,9 @@ import { createCamera } from "./ui/camera.js";
 import { createLabels } from "./ui/labels.js";
 import { createLoading } from "./ui/loading.js";
 
-const KEYS = ["live", "year", "ledger"];
+const KEYS = ["explore", "live", "year", "ledger"];
 const params = new URLSearchParams(location.search);
-const startMode = KEYS.includes(params.get("mode")) ? params.get("mode") : "live";
+const startMode = KEYS.includes(params.get("mode")) ? params.get("mode") : "explore";
 
 const ff = { ready: false, mode: null, world: null, ledgerLoaded: false, error: null, setMode: () => {}, litFraction: () => 0 };
 window.__ff = ff;
@@ -71,6 +72,8 @@ async function boot() {
   };
   ctx.legs = ctx.data.legs;
   const ride = createRide(ctx);
+  modes.explore = createExploreMode(ctx);
+  ff.sky = { activeCount: () => modes.explore.activeCount() };
   modes.live = createLiveMode(ctx);
   modes.year = createYearMode(ctx);
   modes.ledger = createLedgerMode(ctx);

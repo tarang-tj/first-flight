@@ -14,7 +14,7 @@ const wrapDelta = (a, b) => ((((b - a) % 360) + 540) % 360) - 180;
 
 export function createRig(camera, canvas, groundAt) {
   const st = { target: new THREE.Vector3(VIEWS.hero.target.x, VIEWS.hero.target.y, VIEWS.hero.target.z), distance: VIEWS.hero.distance, heading: VIEWS.hero.headingDeg, pitch: VIEWS.hero.pitchDeg };
-  let tween = null, chased = null, userHeading = 0, idle = 0;
+  let tween = null, chased = null, userHeading = 0, idle = 0, suspended = false, free = null;
 
   function apply() {
     const ph = st.pitch * D2R, hh = st.heading * D2R;
@@ -29,6 +29,7 @@ export function createRig(camera, canvas, groundAt) {
   }
 
   function flyTo(goal, ms = 2200) {
+    if (suspended) return Promise.resolve(); // free flight is steering; use freeFly.goTo
     chased = null;
     const from = { x: st.target.x, y: st.target.y, z: st.target.z, d: st.distance, h: st.heading, p: st.pitch };
     const to = {
@@ -65,9 +66,12 @@ export function createRig(camera, canvas, groundAt) {
   let lastPinch = 0;
   const cancelAuto = () => { if (tween) { tween.resolve(); tween = null; } idle = 0; };
   canvas.style.touchAction = "none";
-  const onDown = (e) => { canvas.setPointerCapture?.(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); cancelAuto(); if (pts.size === 2) lastPinch = pinchDist(); };
+  const onDown = (e) => {
+    if (suspended) return; // free flight owns pointer input
+    canvas.setPointerCapture?.(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); cancelAuto(); if (pts.size === 2) lastPinch = pinchDist(); };
   const pinchDist = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
   const onMove = (e) => {
+    if (suspended) return;
     const p = pts.get(e.pointerId);
     if (!p) return;
     const dx = e.clientX - p.x, dy = e.clientY - p.y;
@@ -83,7 +87,7 @@ export function createRig(camera, canvas, groundAt) {
   };
   const onUp = (e) => { pts.delete(e.pointerId); lastPinch = 0; };
   const zoomBy = (f) => { st.distance = Math.min(700000, Math.max(chased ? 40 : 60, st.distance * f)); };
-  const onWheel = (e) => { e.preventDefault(); cancelAuto(); zoomBy(Math.exp(e.deltaY * 0.0012)); };
+  const onWheel = (e) => { if (suspended) return; e.preventDefault(); cancelAuto(); zoomBy(Math.exp(e.deltaY * 0.0012)); };
   canvas.addEventListener("pointerdown", onDown);
   canvas.addEventListener("pointermove", onMove);
   canvas.addEventListener("pointerup", onUp);
@@ -95,13 +99,15 @@ export function createRig(camera, canvas, groundAt) {
     state: st,
     flyTo,
     update(dt) {
+      if (suspended) return; // free flight positions the camera
       stepTween(dt);
       stepChase(dt);
       if (!tween && !chased && pts.size === 0) { idle += dt; }
       apply();
     },
     chase(jet) {
-      if (!jet) { chased = null; return; }
+      if (!jet) { chased = null; free?.resume(); return; }
+      free?.pause();
       if (tween) { tween.resolve(); tween = null; }
       userHeading = 0;
       chased = jet;
@@ -110,6 +116,9 @@ export function createRig(camera, canvas, groundAt) {
       st.distance = Math.min(st.distance, Math.max(160, jet.dims.length * 3.6));
       st.pitch = Math.min(st.pitch, 16);
     },
+    /** Called by free-fly: true while it drives the camera. */
+    setSuspended(on) { suspended = !!on; if (suspended) { if (tween) { tween.resolve(); tween = null; } pts.clear(); } },
+    attachFreeFly(ff) { free = ff; },
     get chasing() { return chased; },
     setView(name, ms) { return flyTo(VIEWS[name] || VIEWS.hero, ms ?? 2400); },
     snapTo(goal) { return flyTo(goal, 0); },

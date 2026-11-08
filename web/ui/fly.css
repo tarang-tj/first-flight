@@ -1,0 +1,43 @@
+/* Free-flight controls. Sits above the canvas, below panels. */
+.fly-ui[hidden] { display: none; }
+.fly-ui { position: fixed; inset: 0; pointer-events: none; z-index: 20; }
+.fly-hint {
+  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%);
+  padding: 7px 14px; border-radius: 999px; font-size: 12px; letter-spacing: 0.02em; white-space: nowrap;
+  color: var(--dim, #a2abb5); background: var(--glass, rgba(8, 10, 14, 0.68)); border: 1px solid var(--line, rgba(255, 255, 255, 0.13));
+  opacity: 0.9; transition: opacity 1.2s ease 1.5s;
+}
+.fly-hint.fly-fade { opacity: 0; }
+.fly-stick {
+  position: absolute; left: max(22px, env(safe-area-inset-left)); bottom: max(26px, env(safe-area-inset-bottom));
+  width: 128px; height: 128px; border-radius: 50%; pointer-events: auto; touch-action: none;
+  background: rgba(8, 10, 14, 0.35); border: 1px solid var(--line-strong, rgba(255, 255, 255, 0.28));
+}
+.fly-knob {
+  position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%;
+  background: var(--accent-soft, rgba(255, 106, 26, 0.14)); border: 1px solid var(--accent, #ff6a1a);
+}
+.fly-look {
+  position: absolute; right: 0; bottom: 0; width: 42vw; height: 46vh; pointer-events: auto; touch-action: none;
+}
+.fly-vertical {
+  position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(26px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 10px;
+}
+.fly-vert {
+  width: 48px; height: 48px; border-radius: 50%; pointer-events: auto; touch-action: none; font-size: 15px; line-height: 1;
+  color: var(--text, #eef1f4); background: var(--glass, rgba(8, 10, 14, 0.68)); border: 1px solid var(--line-strong, rgba(255, 255, 255, 0.28));
+}
+.fly-vert:active { background: var(--accent-soft, rgba(255, 106, 26, 0.14)); border-color: var(--accent, #ff6a1a); }
+
+/* Explore mode on touch: the time dial owns the bottom ~170 px, so the pads sit above it and never cover it. */
+@media (max-width: 819.98px) {
+  body[data-mode="explore"] .fly-touch .fly-stick { bottom: calc(var(--nav-h, 58px) + 188px + env(safe-area-inset-bottom)); width: 112px; height: 112px; }
+  body[data-mode="explore"] .fly-touch .fly-vertical { bottom: calc(var(--nav-h, 58px) + 188px + env(safe-area-inset-bottom)); z-index: 2; }
+  body[data-mode="explore"] .fly-touch .fly-stick { z-index: 2; }
+  body[data-mode="explore"] .fly-touch .fly-look { top: 130px; bottom: calc(var(--nav-h, 58px) + 180px + env(safe-area-inset-bottom)); width: 100%; height: auto; }
+}
+
+/* The overlay itself must never catch clicks (#ui-root > * would otherwise set pointer-events:auto on it and block the dial). */
+#ui-root > .fly-ui { pointer-events: none; }
+.fly-hint { pointer-events: none; bottom: 188px; }
