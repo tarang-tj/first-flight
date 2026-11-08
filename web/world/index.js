@@ -12,12 +12,17 @@ import { createRig } from "./camera-rig.js";
 import { startWeather } from "./weather.js";
 import { glowUniforms } from "./glow-points.js";
 import { sheenUniforms } from "./water-sheen.js";
+import { nightUniforms } from "./terrain-material.js";
+import { attachProbe } from "./world-probe.js";
+import { detectTier, TIER_SETTINGS } from "./tier.js";
 
 const srgb = (c) => new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace);
 const FOG_BASE = 1.25e-5;
 
-export function createWorld(canvas, { onReady, dprCap = 2, weather = true } = {}) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: false });
+export function createWorld(canvas, { onReady, dprCap, weather = true, tier: tierOpt } = {}) {
+  const tier = detectTier(tierOpt);
+  dprCap = Math.min(dprCap ?? TIER_SETTINGS[tier].dprCap, TIER_SETTINGS[tier].dprCap);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: tier === "full", powerPreference: "high-performance", preserveDrawingBuffer: false });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(46, 1, 1, 900000);
@@ -30,7 +35,7 @@ export function createWorld(canvas, { onReady, dprCap = 2, weather = true } = {}
   scene.add(hemi, sun, moon);
 
   const sky = createSky(scene);
-  const terrain = createTerrain();
+  const terrain = createTerrain(tier);
   scene.add(terrain.group);
   const trails = createTrailSystem(scene, glowUniforms);
   const rig = createRig(camera, canvas, (x, z) => terrain.groundAt(x, z));
@@ -38,12 +43,12 @@ export function createWorld(canvas, { onReady, dprCap = 2, weather = true } = {}
   const frameCbs = new Set();
   const state = { date: new Date(), cloudCover: 25, visibilityM: 30000, precip: 0, night: 0 };
   let osm = null, disposed = false, raf = 0, last = 0, clock = 0, size = { w: 1, h: 1 };
-  const world = { scene, camera, renderer, canvas, landmarks: {}, state };
+  const world = { scene, camera, renderer, canvas, landmarks: {}, state, tier };
 
   /** Haze lives in the lowest few km: thin it as the camera climbs so region/state views stay clear. */
   function applyFogHeight() {
-    const h = Math.max(0, camera.position.y), k = 1 / (1 + h / 2500);
-    scene.fog.density = (state.fogBase || FOG_BASE) * Math.max(0.04, k);
+    const h = Math.max(0, camera.position.y), k = 1 / (1 + (h / 2500) * (1 + h / 20000)); // thins faster above ~10 km so region and state views stay clear
+    scene.fog.density = (state.fogBase || FOG_BASE) * Math.max(0.006, k);
     glowUniforms.uFog.value = scene.fog.density;
     sky.setCameraHeight(h);
   }
@@ -69,6 +74,7 @@ export function createWorld(canvas, { onReady, dprCap = 2, weather = true } = {}
     sheenUniforms.uSheenAmount.value = 0.55 + 0.45 * st.day;
     sky.update(st, sv, state.cloudCover);
     state.night = st.night;
+    nightUniforms.uNight.value = st.night;
     if (osm) osm.setNight(st.night);
     state.sun = { ...pos, vector: sv };
   }
@@ -102,41 +108,7 @@ export function createWorld(canvas, { onReady, dprCap = 2, weather = true } = {}
   world.groundAt = (x, z) => terrain.groundAt(x, z);
   world.rig = rig;
 
-  /** CSS-pixel position of a local point, plus whether it is in front of the camera. */
-  world.project = (x, y, z) => {
-    const v = new THREE.Vector3(x, y, z).project(camera), r = canvas.getBoundingClientRect();
-    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height, visible: v.z > -1 && v.z < 1 };
-  };
-  /** Nearest jet within ~34 px of a client point, else null. */
-  world.pick = (cx, cy) => {
-    let best = null, bd = 34;
-    for (const [id, { h }] of jets) {
-      const p = world.project(h.pos.x, h.pos.y, h.pos.z);
-      if (!p.visible) continue;
-      const d = Math.hypot(p.x - cx, p.y - cy);
-      if (d < bd) { bd = d; best = id; }
-    }
-    return best;
-  };
-
-  // boot probe: fraction of a tiny offscreen render that is not black
-  const probe = new THREE.WebGLRenderTarget(64, 40);
-  world.litFraction = () => {
-    try {
-      const buf = new Uint8Array(64 * 40 * 4);
-      renderer.setRenderTarget(probe);
-      renderer.render(scene, camera);
-      renderer.readRenderTargetPixels(probe, 0, 0, 64, 40, buf);
-      renderer.setRenderTarget(null);
-      let lit = 0;
-      for (let i = 0; i < buf.length; i += 4) if (buf[i] + buf[i + 1] + buf[i + 2] > 6) lit++;
-      return lit / (64 * 40);
-    } catch (err) {
-      renderer.setRenderTarget(null);
-      console.warn("[world] litFraction failed", err.message);
-      return 0;
-    }
-  };
+  attachProbe(world, { renderer, scene, camera, canvas, jets });
 
   function resize() {
     const w = canvas.clientWidth || canvas.parentElement?.clientWidth || 800, h = canvas.clientHeight || canvas.parentElement?.clientHeight || 600;
@@ -180,7 +152,7 @@ export function createWorld(canvas, { onReady, dprCap = 2, weather = true } = {}
     stopWeather();
     rig.dispose(); trails.dispose(); sky.dispose(); terrain.dispose(); osm?.dispose();
     for (const { h } of jets.values()) h.dispose();
-    probe.dispose(); renderer.dispose();
+    world.disposeProbe(); renderer.dispose();
   };
 
   const stopWeather = weather ? startWeather((w) => world.setWeather(w)) : () => {};

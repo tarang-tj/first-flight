@@ -51,7 +51,7 @@ export async function createOsmLayer(groundAt = () => 0, core = null) {
   } : () => null;
   const g = extrudeBuildings(data.buildings, BASE_Y, uvOf);
   const matGeneral = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const matPlantWall = new THREE.MeshLambertMaterial({ vertexColors: true, color: 0xf2f5f8, emissive: 0xffa060, emissiveIntensity: 0 });
+  const matPlantWall = new THREE.MeshLambertMaterial({ vertexColors: true, color: 0xf2f5f8, emissive: 0xffc070, emissiveIntensity: 0 });
   const matRoof = new THREE.MeshLambertMaterial({ map: core && core.texture, color: 0xffffff });
   const matPlantRoof = new THREE.MeshLambertMaterial({ map: core && core.texture, color: 0xffffff, emissive: 0xff7a2a, emissiveIntensity: 0 });
   const meshes = [[g.walls, matGeneral], [g.roofs, matRoof], [g.plantWalls, matPlantWall], [g.plantRoofs, matPlantRoof]]
@@ -111,7 +111,7 @@ export async function createOsmLayer(groundAt = () => 0, core = null) {
 
   api.setNight = (n) => {
     lights.userData.setOpacity(n);
-    matPlantWall.emissiveIntensity = 0.07 * n;
+    matPlantWall.emissiveIntensity = 0.05 * n;
     matPlantRoof.emissiveIntensity = 0.04 * n;
     matGeneral.emissive.setRGB(0.06 * n, 0.05 * n, 0.03 * n);
   };

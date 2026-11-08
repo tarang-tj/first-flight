@@ -17,7 +17,7 @@ import { createWorld } from "./index.js";
 import { toLocal } from "../geo.js";
 
 const q = new URLSearchParams(location.search);
-const world = createWorld(document.getElementById("scene"), { weather: q.get("weather") !== "off" });
+const world = createWorld(document.getElementById("scene"), { weather: q.get("weather") !== "off", tier: q.get("tier") || undefined });
 window.__world = world;
 
 const P = { paine: [47.9063, -122.2816], renton: [47.4931, -122.2158], bfi: [47.53, -122.3019], moses: [47.2077, -119.32] };
@@ -63,7 +63,12 @@ world.ready.then(() => {
     const r = routes[Math.floor(rnd() * routes.length)];
     handles.push(world.addTrail("t" + i, path(r[0], r[1], r[2], r[3] * (0.5 + rnd())), { color: colors[i % 4], glow: 1, width: Number(q.get("tw") || 0) }));
   }
-  const demo = world.addTrail("latest", path(P.renton, P.bfi, 6000, 2200), { color: "#ff6a1a", glow: 1.4 });
+  const demoPts = path(P.renton, P.bfi, 6000, 2200);
+  const demo = world.addTrail("latest", demoPts, { color: "#ff6a1a", glow: 1.4 });
+  if (q.get("ridetrail")) { // camera a few metres from the ribbon, looking along it (near-plane clipping check)
+    const i = Math.floor(demoPts.length * 0.4), a = demoPts[i], b = demoPts[i + 1];
+    world.snapTo({ target: { x: a.x, y: a.y, z: a.z }, distance: Number(q.get("ridetrail")), headingDeg: (Math.atan2(b.x - a.x, -(b.z - a.z)) * 180) / Math.PI, pitchDeg: 3 });
+  }
   demo.setProgress(1);
   if (q.get("animate")) {
     const t0 = performance.now();

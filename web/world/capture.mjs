@@ -8,15 +8,23 @@ import { createStaticServer, repoRoot } from "../../scripts/static-server.mjs";
 
 const SHOTS = {
   "hero-noon": "view=hero&t=2026-11-08T21:20:00Z",
-  "hero-night": "view=hero&t=2026-11-09T04:30:00Z",
-  region: "view=region&t=2026-11-08T21:00:00Z",
-  "state-trails": "view=state&t=2026-11-08T20:00:00Z&trails=600&tw=2.6",
+  "hero-night": "view=hero&weather=off&cc=25&t=2026-11-09T04:30:00Z",
+  region: "view=region&weather=off&cc=25&t=2026-11-08T21:00:00Z",
+  "state-trails": "view=state&weather=off&cc=25&t=2026-11-08T20:00:00Z&trails=600&tw=2.6",
   chase: "view=hero&t=2026-11-08T22:10:00Z&chase=1",
   offline: "",
   "sun-api": "view=hero&t=2026-11-08T21:20:00Z",
   perf: "view=state&t=2026-11-08T20:00:00Z&trails=1500&animate=1",
   "hero-clear": "view=hero&weather=off&cc=0&t=2026-11-08T21:20:00Z",
   plant: "cam=350,20,-2500,330,16,1500&weather=off&cc=10&t=2026-11-08T21:20:00Z",
+  "state-lite": "view=state&weather=off&cc=25&tier=lite&t=2026-11-08T20:00:00Z&trails=300&tw=2.6",
+  "hero-lite": "view=hero&weather=off&cc=25&tier=lite&t=2026-11-08T21:20:00Z",
+  "trail-close": "cam=250,60,300,60,18,900&weather=off&cc=10&trails=40&tw=2.6&t=2026-11-08T21:20:00Z",
+  "trail-region": "view=region&weather=off&cc=25&trails=25&tw=2.4&t=2026-11-08T21:00:00Z",
+  "bfi-low": "cam=4900,330,45900,60,18,900&weather=off&cc=25&trails=0&t=2026-11-08T21:20:00Z",
+  "region-phone": "view=region&weather=off&cc=25&trails=12&tw=2.4&tier=lite&t=2026-11-08T21:00:00Z",
+  "trail-ride": "ridetrail=25&weather=off&cc=25&trails=0&t=2026-11-08T21:20:00Z",
+  "state-phone": "view=state&tier=lite&trails=0&t=2026-11-08T20:00:00Z",
   "hero-summer": "view=hero&t=2026-07-15T02:30:00Z",
 };
 const names = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SHOTS);
@@ -26,11 +34,12 @@ await mkdir(outDir, { recursive: true });
 const server = createStaticServer(repoRoot);
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}`;
+const phone = true; // shots named *-phone render at 390x844
 const gpu = process.env.GPU === "1"; // real GPU via Metal for frame-rate samples
 const browser = await chromium.launch({ args: gpu ? ["--use-angle=metal", "--ignore-gpu-blocklist", "--enable-gpu"] : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
 try {
   for (const name of names) {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+    const page = await browser.newPage({ viewport: phone && name.endsWith("phone") ? { width: 390, height: 844 } : { width: 1280, height: 800 }, deviceScaleFactor: 1 });
     const problems = [];
     page.on("console", (m) => { if (m.type() === "error" || (m.type() === "warning" && !/GPU stall/.test(m.text()))) problems.push(`${m.type()}: ${m.text()}`); });
     page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));

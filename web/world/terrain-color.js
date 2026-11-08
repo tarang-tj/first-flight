@@ -9,7 +9,8 @@ const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
 
 /** Colour for a vertex. h metres MSL, ny = normal.y (1 flat), n = per-vertex noise 0..1. */
 export function terrainColor(h, ny, n) {
-  if (h <= 0.4) return [0.07 + n * 0.015, 0.14 + n * 0.02, 0.21 + n * 0.025];
+  // dark on purpose: matches USGS ocean imagery so no-data patches (Canada) do not show as flat slabs
+  if (h <= 0.4) return [0.03 + n * 0.008, 0.062 + n * 0.012, 0.115 + n * 0.015];
   const low = [0.13 + n * 0.04, 0.17 + n * 0.04, 0.12];
   const forest = [0.05 + n * 0.025, 0.12 + n * 0.035, 0.08 + n * 0.02];
   const rock = [0.36 + n * 0.06, 0.33 + n * 0.05, 0.3 + n * 0.04];

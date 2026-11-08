@@ -25,7 +25,7 @@ export function patchWaterSheen(material) {
           float fres = pow(1.0 - clamp(dot(V, N), 0.0, 1.0), 3.0);
           vec3 R = reflect(-V, N);
           float glit = pow(max(dot(R, normalize(uSheenSun)), 0.0), 140.0);
-          gl_FragColor.rgb += water * uSheenAmount * (uSheenSky * (0.04 + 0.6 * fres) + uSheenSunColor * glit * 1.6);
+          gl_FragColor.rgb += water * ffA * uSheenAmount * (uSheenSky * (0.04 + 0.6 * fres) + uSheenSunColor * glit * 1.6);
         }
         #include <dithering_fragment>`);
   };

@@ -53,3 +53,23 @@ export function mergeTrails(trails) {
   });
   return { position, other, along, side, end, trail, color, index, ranges, vertexCount: nv };
 }
+
+/**
+ * JS twin of the trail vertex shader's screen-space offset (trails.js). `self` and `other` are the vertex
+ * and its segment neighbour in pixels, `end` 0/1, `side` -1/+1. The direction is always start -> end so
+ * side +1 is the same bank at both ends of a segment; flipping it per end twists the ribbon into a bowtie.
+ */
+export function ribbonCorner(self, other, end, side, widthPx) {
+  const dx = (other.x - self.x) * (1 - 2 * end) + 1e-5, dy = (other.y - self.y) * (1 - 2 * end) + 1e-5;
+  const len = Math.hypot(dx, dy);
+  return { x: self.x + (-dy / len) * side * widthPx, y: self.y + (dx / len) * side * widthPx };
+}
+
+/** JS twin of the shader's near-plane clip. P, Q = clip-space {x,y,w}; returns [P', Q'] with both w >= eps, or null if the whole segment is behind. */
+export function clipToNear(P, Q, eps = 0.05) {
+  if (P.w < eps && Q.w < eps) return null;
+  const lerp = (A, B, t) => ({ x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t, w: A.w + (B.w - A.w) * t });
+  if (P.w < eps) return [lerp(P, Q, (eps - P.w) / (Q.w - P.w)), Q];
+  if (Q.w < eps) return [P, lerp(P, Q, (P.w - eps) / (P.w - Q.w))];
+  return [P, Q];
+}
