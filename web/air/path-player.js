@@ -94,3 +94,41 @@ export function trimToFlight(pts, thresholdFt = 300, padS = 45) {
   const base = pts[a][0];
   return pts.slice(a, b + 1).map((p) => [p[0] - base, p[1], p[2], p[3]]);
 }
+
+/**
+ * Like samplePath, but heading and pitch come from a window around t (+/- w seconds), so a
+ * 30 s-spaced path turns smoothly instead of snapping at every vertex.
+ */
+export function samplePathSmooth(pts, t, w = 15) {
+  const s = samplePath(pts, t);
+  if (!s) return null;
+  const a = samplePath(pts, t - w), b = samplePath(pts, t + w);
+  const dist = groundDistanceM(a.lat, a.lon, b.lat, b.lon);
+  if (dist < 5) return s;
+  return { ...s, headingDeg: bearingDeg(a.lat, a.lon, b.lat, b.lon), pitchDeg: deg(Math.atan2((b.altFt - a.altFt) * FT, dist)) };
+}
+
+/** Ground speed in knots from the recorded points around t (real flight seconds). 0 if unknown. */
+export function groundSpeedKt(pts, t, w = 15) {
+  if (!Array.isArray(pts) || pts.length < 2) return 0;
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0];
+  const ta = Math.max(t0, t - w), tb = Math.min(t1, t + w);
+  if (tb - ta <= 0) return 0;
+  const a = samplePath(pts, ta), b = samplePath(pts, tb);
+  return (groundDistanceM(a.lat, a.lon, b.lat, b.lon) / (tb - ta)) * 1.943844;
+}
+
+/** Fraction (0..1) of the path's length flown by time t: what a trail's setProgress expects. */
+export function arcFractionAt(pts, t) {
+  if (!Array.isArray(pts) || pts.length < 2) return 1;
+  const seg = (a, b) => Math.hypot(groundDistanceM(a[1], a[2], b[1], b[2]), ((b[3] || 0) - (a[3] || 0)) * FT);
+  let total = 0, flown = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const L = seg(pts[i], pts[i + 1]);
+    total += L;
+    const span = pts[i + 1][0] - pts[i][0];
+    if (t >= pts[i + 1][0]) flown += L;
+    else if (t > pts[i][0] && span > 0) flown += L * ((t - pts[i][0]) / span);
+  }
+  return total > 0 ? Math.min(1, flown / total) : 1;
+}

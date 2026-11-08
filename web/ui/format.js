@@ -99,3 +99,11 @@ export function routeText(from, to) {
   if (to) return `into ${airportName(to)}`;
   return "route not recorded";
 }
+
+/** Stopwatch style: 754 -> "12:34", 4000 -> "1:06:40". */
+export function fmtClock(sec) {
+  const s = Math.max(0, Math.floor(Number.isFinite(sec) ? sec : 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  const two = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${two(m)}:${two(r)}` : `${m}:${two(r)}`;
+}

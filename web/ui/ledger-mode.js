@@ -26,6 +26,7 @@ export function createLedgerMode(ctx) {
   function enter() {
     const host = chrome.stage;
     clear(host);
+    ctx.camera.setFraming(0, 0);
     try { world?.setView?.("region"); } catch (e) { console.warn(`[ledger] camera: ${e?.message || e}`); }
     const ledger = data.ledger;
     const head = h("header.ledger-head", {},

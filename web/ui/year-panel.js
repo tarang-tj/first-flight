@@ -17,13 +17,14 @@ export function createYearPanel(host, { reduceMotion, onToggle, onScrub, startLa
   const counters = h("div.counters", { role: "group", "aria-label": "New jets seen, by program" }, PROGRAMS.map((p) => cells[p].el));
   const slider = h("input.scrub", { type: "range", min: "0", max: "1000", value: "0", step: "1", "aria-label": "Timeline, January 2025 to now", "aria-valuetext": startLabel });
   const play = h("button.btn.primary.play", { type: "button", onclick: onToggle, "aria-label": "Play" }, "▶");
+  const finalLine = h("p.year-final", { "aria-live": "polite" });
   const note = h("p.fine", { text: "Each line is one new jet's first flight. Warm-up days at the start are not counted." });
   let dragging = false;
   slider.addEventListener("pointerdown", () => { dragging = true; });
   addEventListener("pointerup", () => { dragging = false; });
   slider.addEventListener("input", () => onScrub(Number(slider.value) / 1000));
 
-  host.append(h("section.panel.year", {}, h("p.kicker", { text: "A Year in Light" }), date, counters,
+  host.append(h("section.panel.year", {}, h("p.kicker", { text: "A Year in Light" }), date, finalLine, counters,
     h("div.scrub-row", {}, play, h("div.scrub-wrap", {}, slider, h("div.scrub-ends.mono", {}, h("span", { text: startLabel }), h("span", { text: endLabel })))), note, live));
 
   return {
@@ -33,7 +34,10 @@ export function createYearPanel(host, { reduceMotion, onToggle, onScrub, startLa
     },
     setDate(t, fraction) {
       const d = new Date(t * 1000);
-      month.textContent = MON[d.getUTCMonth()];
+      if (month.textContent !== MON[d.getUTCMonth()]) {
+        month.textContent = MON[d.getUTCMonth()];
+        if (!reduceMotion) { month.classList.remove("tick"); void month.offsetWidth; month.classList.add("tick"); }
+      }
       year.textContent = String(d.getUTCFullYear());
       if (!dragging) slider.value = String(Math.round(fraction * 1000));
       slider.setAttribute("aria-valuetext", `${MON[d.getUTCMonth()]} ${d.getUTCFullYear()}`);
@@ -50,6 +54,7 @@ export function createYearPanel(host, { reduceMotion, onToggle, onScrub, startLa
         c.el.classList.toggle("is-zero", goal === 0);
       }
     },
+    setFinal(text) { finalLine.textContent = text; },
     announce(text) { live.textContent = text; },
   };
 }

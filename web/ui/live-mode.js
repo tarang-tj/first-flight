@@ -1,114 +1,124 @@
-// Live mode: never empty. Replays the newest new-jet first flight on a loop,
-// then layers live traffic on top when the feed answers.
+// Live mode: never empty. Opens on the plant, then replays the newest Boeing flights one after
+// another as a short film (see live-story.js). Live traffic layers on top when the feed answers.
 
-import { h, clear } from "./dom.js";
-import { routeText, relativeAgo, fmtDuration, fmtAlt, monthKey } from "./format.js";
-import { samplePath, pathDuration, maxAltFt, trimToFlight } from "../air/path-player.js";
+import { monthKey, fmtAlt, fmtClock } from "./format.js";
+import { samplePathSmooth, groundSpeedKt, arcFractionAt, pathDuration, trimToFlight } from "../air/path-player.js";
 import { toTrailPoints, frameNear, poseLocal } from "../air/geo-bridge.js";
-import { pickReplay, newestJets } from "../air/data.js";
+import { pickReplay } from "../air/data.js";
 import { classify } from "../air/classify.js";
+import { createLivePanel, trafficLine, headlineFor } from "./live-panel.js";
+import { phaseAt, flightStart, storyLength, shotFor, entryTime, P } from "./live-story.js";
+import { makeSimClock, heroShot } from "./choreo.js";
 
-const REPLAY_S = 22; // real seconds for the flight to draw
-const HOLD_S = 4;    // real seconds the finished trail glows before the loop
+export { headlineFor };
+const MAX_QUEUE = 4;
 
-export function headlineFor(replay, nowMs) {
-  const what = replay.isNewJet ? "Latest new Boeing" : "Latest Boeing test flight";
-  const id = replay.callsign || (replay.hex || "").toUpperCase();
-  return `${what}: ${id}, ${routeText(replay.from, replay.to)}, ${relativeAgo(nowMs, replay.t0 + pathDuration(replay.pts))}`;
+function finalShot(points, wide) {
+  const f = frameNear(points, 100, 20, wide);
+  return { target: f.target, distance: Math.max(f.distance, 34000), headingDeg: 20, pitchDeg: 44 };
 }
 
 export function createLiveMode(ctx) {
-  const { world, geo, ticker, chrome, data } = ctx;
+  const { world, geo, ticker, chrome, data, camera } = ctx;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const panel = createLivePanel(ctx);
   let run = null;
 
-  function renderPanel(replay, status) {
-    const host = chrome.stage;
-    clear(host);
-    if (!replay) {
-      host.append(h("section.panel.hero", {},
-        h("p.kicker", { text: "Waiting for data" }),
-        h("h1.headline", { text: "No recorded flights loaded yet" }),
-        h("p.lede", { text: "The flight data files are not available, so there is nothing to replay. The 3D world is still live to explore." })));
-      return {};
-    }
-    const headline = h("h1.headline", { text: headlineFor(replay, Date.now()) });
-    const traffic = h("p.traffic.mono", { "aria-live": "off" });
-    const facts = [
-      replay.program && replay.program !== "unknown" && `${replay.program}`,
-      fmtDuration(pathDuration(replay.pts)),
-      `up to ${fmtAlt(maxAltFt(replay.pts))}`,
-    ].filter(Boolean).join("  ·  ");
-    const actions = h("div.actions", {},
-      replay.airframe && h("button.btn.primary", { type: "button", onclick: () => ctx.rideAirframe(replay.airframe) }, "Ride along"),
-      replay.airframe && h("button.btn", { type: "button", onclick: () => ctx.openAirframe(replay.airframe.hex) }, "Birth certificate"));
-    const counted = data.airframes.filter((a) => a.counted === true);
-    const listTitle = counted.length ? "Newest jets" : "Recently seen";
-    const list = h("ul.newest", { "aria-label": listTitle },
-      newestJets(counted.length ? counted : data.airframes, 5).map((a) =>
-        h("li", {}, h("button.row-btn", { type: "button", onclick: () => ctx.openAirframe(a.hex) },
-          h("span.mono.cs", { text: a.firstFlight.callsign || a.reg || a.hex }),
-          h("span.prog", { text: a.program === "unknown" ? "type n/a" : a.program }),
-          h("span.ago", { text: relativeAgo(Date.now(), a.firstFlight.t) })))));
-    host.append(h("section.panel.hero", {},
-      h("p.kicker", { text: replay.isNewJet ? "New jet, first flight, replayed" : "Boeing test flight, replayed" }),
-      headline, h("p.facts.mono", { text: facts }), actions, traffic,
-      list.childNodes.length ? h("details.newest-wrap", {}, h("summary", { text: listTitle }), list) : null));
-    return { headline, traffic, replay };
+  function buildQueue(first) {
+    const worth = (l) => pathDuration(l.pts) >= 900 && l.pts.reduce((m, p) => Math.max(m, p[3] || 0), 0) >= 3000 && entryTime(toTrailPoints(geo, l.pts)) !== null;
+    const more = ctx.legs.filter((l) => worth(l) && !(l.hex === first.hex && l.t0 === first.t0))
+      .map((l) => ({ ...l, isNewJet: false, airframe: data.airframes.find((a) => a.hex === l.hex) || null }));
+    return [first, ...more].slice(0, MAX_QUEUE);
   }
 
-  function trafficLine(ac) {
-    const test = ac.filter((a) => classify(a) === "test").length;
-    return `On the radar now: ${test} Boeing test ${test === 1 ? "flight" : "flights"}, ${ac.length - test} other aircraft.`;
+  function makeCycle(item, i, prevShot) {
+    const path = trimToFlight(item.pts);
+    const points = toTrailPoints(geo, path);
+    const id = `replay:${item.hex || "x"}:${i}`;
+    let jet = null, trail = null;
+    try {
+      jet = world?.addJet?.(id, item.program && item.program !== "unknown" ? item.program : "737");
+      jet?.setHighlight?.("test");
+      trail = world?.addTrail?.(id, points, { color: "#ff6a1a", glow: 1.2, width: 4 });
+      trail?.setProgress?.(0);
+    } catch (err) { console.warn(`[live] replay scene failed: ${err?.message || err}`); }
+    const e0 = entryTime(points) ?? 0; // the film joins the flight where it enters the Sound
+    const arrive = e0 > 120;
+    const first = samplePathSmooth(path, e0);
+    const intro = i === 0 && !reduce;
+    const clock = makeSimClock(pathDuration(path) - e0, { chase: P.chase, run: P.run, reverse: arrive });
+    return {
+      item, path, jet, trail, intro, t: 0, dur: pathDuration(path), arrive,
+      simAt: (local) => e0 + clock(local),
+      final: finalShot(points, innerWidth >= 820),
+      from: prevShot || heroShot(1),
+      startJet: poseLocal(geo, first), startHeading: first.headingDeg,
+      jetLen: jet?.dims?.length || 60,
+      dispose() { trail?.dispose?.(); jet?.dispose?.(); },
+    };
   }
 
   async function enter() {
     const my = { alive: true, offs: [] };
     run = my;
-    const legs = data.legs;
-    const replay = await pickReplay({ airframes: data.airframes, legs, loadMonth: ctx.loadMonth, monthOf: monthKey });
+    let cur = heroShot(0), cyc = null, lastReadout = 0, idx = 0, queue = [];
+    camera.drive(() => cur, { snap: true, rate: 4 });
+    camera.setFraming(...(innerWidth >= 820 ? [-0.1, 0.05] : [0, 0.17]));
+    my.offs.push(ticker.add((dt, nowMs) => {
+      ctx.traffic?.frame(Date.now());
+      if (cyc && !reduce) {
+        cyc.t += dt;
+        if (cyc.t >= storyLength(cyc.intro)) { idx++; start(idx); cyc.t = 0; }
+        const ph = phaseAt(cyc.t, cyc.intro, cyc.arrive);
+        const simT = cyc.simAt(Math.max(0, cyc.t - flightStart(cyc.intro)));
+        const s = samplePathSmooth(cyc.path, simT);
+        const pos = poseLocal(geo, s);
+        cyc.jet?.setPose(pos, s.headingDeg, s.pitchDeg, 0);
+        cyc.trail?.setProgress?.(arcFractionAt(cyc.path, simT));
+        cyc.trail?.setOpacity?.(ph.name === "fade" ? 1 - ph.k : 1);
+        cur = shotFor(ph, { ...cyc, jet: pos, heading: s.headingDeg, hero: heroShot });
+        panel.setCompact(ph.name === "chase" || ph.name === "run");
+        if (nowMs - lastReadout > 200) {
+          lastReadout = nowMs;
+          const flying = ph.name !== "hero" && ph.name !== "glide";
+          panel.setReadout(flying ? `T+${fmtClock(simT)}  ·  ${fmtAlt(s.altFt)}  ·  ${Math.round(groundSpeedKt(cyc.path, simT))} kt` : "");
+          if (Math.floor(nowMs / 1000) % 20 === 0) panel.refreshHeadline();
+        }
+      }
+      camera.step(dt);
+    }));
+    const replay = await pickReplay({ airframes: data.airframes, legs: ctx.legs, loadMonth: ctx.loadMonth, monthOf: monthKey });
     if (!my.alive) return;
-    const ui = renderPanel(replay);
-    const traffic = ctx.traffic;
-    // Live layer: sync now if we already have data, and on every update.
+    if (!replay) panel.empty(); else panel.show(replay);
     const showTraffic = () => {
-      if (!ui.traffic) return;
-      ui.traffic.textContent = ctx.live.status === "live" && ctx.live.ac.length ? trafficLine(ctx.live.ac) : "";
+      if (!panel.traffic) return;
+      const ac = ctx.live.ac;
+      panel.traffic.textContent = ctx.live.status === "live" && ac.length ? trafficLine(ac.filter((a) => classify(a) === "test").length, ac.length) : "";
     };
-    my.offs.push(ctx.live.subscribe((ac, fetchedAt) => { traffic?.sync(ac, fetchedAt); showTraffic(); }));
-    if (ctx.live.ac.length) traffic?.sync(ctx.live.ac, ctx.live.fetchedAt);
+    my.offs.push(ctx.live.subscribe((ac, at) => { ctx.traffic?.sync(ac, at); showTraffic(); }));
+    if (ctx.live.ac.length) ctx.traffic?.sync(ctx.live.ac, ctx.live.fetchedAt);
     showTraffic();
     if (!replay) return;
+    queue = buildQueue(replay);
 
-    const path = trimToFlight(replay.pts);
-    const points = toTrailPoints(geo, path);
-    const dur = pathDuration(path);
-    let jet = null, trail = null;
-    try {
-      jet = world?.addJet?.(`replay:${replay.hex || "x"}`, (replay.program && replay.program !== "unknown") ? replay.program : "737");
-      jet?.setHighlight?.("test");
-      trail = world?.addTrail?.(`replay:${replay.hex || "x"}`, points, { color: "#ff6a1a", glow: 1 });
-    } catch (err) {
-      console.warn(`[live] replay scene failed: ${err?.message || err}`);
+    function start(i) {
+      cyc?.dispose();
+      cyc = makeCycle(queue[i % queue.length], i, i === 0 ? null : cur);
+      if (i > 0) panel.show(cyc.item);
+      showTraffic();
     }
-    if (world?.flyTo) {
-      const f = frameNear(points, 100, 20, innerWidth >= 820);
-      try { world.flyTo({ ...f, headingDeg: 20, pitchDeg: 30 }, 2600); }
-      catch (err) { console.warn(`[live] camera move failed: ${err?.message || err}`); }
+    await ctx.whenReady; // the film starts once the plant has loaded, not on a half-built scene
+    if (!my.alive) return;
+    start(0);
+    my.dispose = () => cyc?.dispose();
+    if (reduce) { // no motion: the whole trail, framed in the region, jet at the end
+      cyc.trail?.setProgress?.(1);
+      const s = samplePathSmooth(cyc.path, cyc.dur);
+      cyc.jet?.setPose(poseLocal(geo, s), s.headingDeg, 0, 0);
+      cur = cyc.final;
+      camera.drive(() => cur, { snap: true });
+      return;
     }
-    let clock = 0, lastText = 0;
-    my.offs.push(ticker.add((dt, nowMs) => {
-      clock = (clock + dt) % (REPLAY_S + HOLD_S);
-      const p = Math.min(1, clock / REPLAY_S);
-      const eased = p < 1 ? p : 1;
-      const s = samplePath(path, eased * dur);
-      if (s && jet) jet.setPose(poseLocal(geo, s), s.headingDeg, s.pitchDeg, 0);
-      trail?.setProgress?.(eased);
-      const fade = clock > REPLAY_S + HOLD_S - 1 ? Math.max(0, REPLAY_S + HOLD_S - clock) : 1;
-      trail?.setOpacity?.(fade);
-      traffic?.frame(Date.now());
-      if (nowMs - lastText > 20000 && ui.headline) { lastText = nowMs; ui.headline.textContent = headlineFor(replay, Date.now()); }
-    }));
-    my.dispose = () => { trail?.dispose?.(); jet?.dispose?.(); };
   }
 
   function exit() {
@@ -116,8 +126,9 @@ export function createLiveMode(ctx) {
     run.alive = false;
     run.offs.forEach((f) => f());
     run.dispose?.();
+    camera.release();
     ctx.traffic?.clear();
-    clear(chrome.stage);
+    chrome.stage.replaceChildren();
     run = null;
   }
 

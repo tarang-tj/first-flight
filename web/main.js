@@ -16,6 +16,9 @@ import { startLive } from "./air/live-feed.js";
 import { createLiveTraffic } from "./air/live-traffic.js";
 import { createLiveState } from "./ui/live-state.js";
 import { loadWorld } from "./ui/world-loader.js";
+import { createCamera } from "./ui/camera.js";
+import { createLabels } from "./ui/labels.js";
+import { createLoading } from "./ui/loading.js";
 
 const KEYS = ["live", "year", "ledger"];
 const params = new URLSearchParams(location.search);
@@ -31,24 +34,32 @@ async function boot() {
   let ctx;
   const chrome = createChrome(root, { onMode: (k) => ff.setMode(k) });
   chrome.stage.append(h("p.lede.boot", { text: "Loading the sky over Puget Sound…" }));
+  const loading = createLoading(root);
+  loading.stage(0.08, "Loading flights and the 3D world");
 
   const [ledger, airframes, latest, geo, worldRes] = await Promise.all([
     loadLedger(), loadAirframes(), loadLatest(), loadGeo(), loadWorld(canvas),
   ]);
   const world = worldRes.world;
+  loading.stage(0.4, "Building Puget Sound");
+  worldRes.ready.then(() => loading.stage(0.7, "Streaming terrain and imagery"));
+  Promise.race([world?.imageryReady, new Promise((r) => setTimeout(r, 90000))]).catch(() => {}).then(() => loading.done());
   ff.world = world;
   ff.ledgerLoaded = Array.isArray(ledger?.months) && ledger.months.length > 0;
   if (worldRes.error) {
     ff.error = worldRes.error;
     root.append(h("p.world-error", { role: "alert", text: `The 3D view could not start (${worldRes.error}). Charts and data still work.` }));
   }
-  try { world?.setSun?.(new Date()); } catch (e) { console.warn(`[world] setSun failed: ${e?.message || e}`); }
+  const sunAt = params.get("sun") ? new Date(params.get("sun")) : new Date(); // ?sun=ISO pins the light for screenshots
+  try { world?.setSun?.(Number.isNaN(sunAt.getTime()) ? new Date() : sunAt); } catch (e) { console.warn(`[world] setSun failed: ${e?.message || e}`); }
 
   const ticker = createTicker(world);
+  const camera = createCamera(world);
+  if (world && geo) createLabels({ root, world, geo, ticker });
   const live = createLiveState(chrome.setBadge);
   const modes = {};
   ctx = {
-    world, geo, ticker, chrome, live, loadMonth: loadTrailMonth,
+    world, geo, ticker, chrome, live, camera, whenReady: worldRes.ready, loadMonth: loadTrailMonth,
     data: { ledger, airframes, legs: normalizeLegs(latest) },
     traffic: world ? createLiveTraffic(world, geo) : null,
     ledgerLoaded: (v) => { ff.ledgerLoaded = !!v; },
@@ -105,6 +116,16 @@ async function boot() {
     if (openAirframe(hex)) return;
     const ac = ctx.traffic?.aircraft(hex);
     if (ac) { clear(chrome.cardHost); renderLiveCard(chrome.cardHost, { ac, onClose: closeCard }); }
+  });
+  // Hover: a pointer cursor over a pickable jet (mouse only; throttled to one pick per frame).
+  let hoverQueued = false;
+  canvas.addEventListener("pointermove", (e) => {
+    if (e.pointerType !== "mouse" || e.buttons || hoverQueued || !world?.pick) return;
+    hoverQueued = true;
+    requestAnimationFrame(() => {
+      hoverQueued = false;
+      try { canvas.classList.toggle("is-pickable", !!world.pick(e.clientX, e.clientY)); } catch { canvas.classList.remove("is-pickable"); }
+    });
   });
   addEventListener("keydown", (e) => { if (e.key === "Escape") closeCard(); });
 
