@@ -94,6 +94,17 @@ class ScanTests(unittest.TestCase):
         tar = make_tar([("traces/01/trace_full_a0000a.json", trace_doc("a0000a", "B38M", TEST_FLIGHT))], gz=False)
         self.assertEqual(len(sh.scan(tar, None)["legs"]), 1)
 
+    def test_untyped_new_airframe_is_kept(self):
+        doc = trace_doc("a99999", None, [row(0, 47.4931, -122.2158, "ground", flight="BOE451"), row(30, 47.52, -122.22, 2000), row(900, 47.53, -122.30, "ground")], r=None)
+        del doc["t"]
+        tar = make_tar([("traces/99/trace_full_a99999.json", doc)])
+        out = sh.scan(tar, None)
+        self.assertEqual(len(out["legs"]), 1)
+        leg = out["legs"][0]
+        self.assertTrue(leg["untyped"])
+        self.assertTrue(leg["boeingOp"])
+        self.assertEqual((leg["from"], leg["to"]), ("KRNT", "KBFI"))
+
     def test_type_filter(self):
         for t in ["B762", "B77L", "B778", "B779", "B38M", "B39M", "B3XM", "B37M", "P8", "B748"]:
             self.assertTrue(sh.is_boeing_type(t), t)

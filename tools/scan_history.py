@@ -118,7 +118,11 @@ def leg_record(doc, rows):
     last_ap = airfield_at(last[1], last[2], last[3])
     # Full paths only for Boeing-operated flights (BOE callsigns or a Boeing
     # owner); airline legs keep the summary, which keeps a year of days small.
-    boeing_op = any(c.startswith("BOE") for c in callsigns) or "boeing" in (doc.get("ownOp") or "").lower()
+    # Untyped jets departing or landing at a Boeing field are kept in full too:
+    # they are the likeliest new airframes on first flights.
+    boeing_op = (any(c.startswith("BOE") for c in callsigns)
+                 or "boeing" in (doc.get("ownOp") or "").lower()
+                 or (not doc.get("t") and (first_ap or last_ap) is not None))
     return {
         "hex": doc.get("icao"),
         "reg": doc.get("r"),
@@ -134,6 +138,7 @@ def leg_record(doc, rows):
         "touched": sorted(set(touched)),
         "maxAlt": max_alt,
         "boeingOp": boeing_op,
+        "untyped": not doc.get("t"),
         "path": pts if boeing_op else None,
     }
 
@@ -150,7 +155,10 @@ def scan(stream, date):
                 continue
             blob = f.read()
             scanned += 1
-            if not is_boeing_type(peek_type(blob)):
+            # Brand-new airframes are often not in the aircraft database yet,
+            # so they carry no type at all: keep untyped traces too.
+            t = peek_type(blob)
+            if t is not None and not is_boeing_type(t):
                 continue
             try:
                 doc = json.loads(raw_bytes(blob))
