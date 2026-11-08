@@ -117,6 +117,23 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(sh.airfield_at(PAE[0] + 0.018, PAE[1], 500), "KPAE")  # 2 km out, climbing
         self.assertIsNone(sh.airfield_at(47.7, -122.28, "ground"))  # 23 km south
 
+    def test_corrupt_trace_skips_that_trace_not_the_day(self):
+        good = gzip.compress(json.dumps(trace_doc("a12345", "B77L", TEST_FLIGHT)).encode())
+        bad = bytearray(gzip.compress(json.dumps(trace_doc("a22222", "B77L", TEST_FLIGHT * 40)).encode()))
+        for i in range(30, len(bad) - 10):
+            bad[i] ^= 0x5A  # valid gzip header, garbage deflate body
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            for name, data in (("traces/22/trace_full_a22222.json", bytes(bad)), ("traces/23/trace_full_a12345.json", good)):
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        buf.seek(0)
+        out = sh.scan(buf, "2026-11-05")
+        self.assertEqual(out["scanned"], 2)
+        self.assertEqual(out["skipped"], 1)
+        self.assertEqual([g["hex"] for g in out["legs"]], ["a12345"])
+
 
 if __name__ == "__main__":
     unittest.main()

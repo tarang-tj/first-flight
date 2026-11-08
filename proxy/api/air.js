@@ -22,7 +22,8 @@ export function allowOrigin(origin) {
 
 export default async function handler(req) {
   const url = new URL(req.url);
-  const area = AREAS[url.searchParams.get("area") || "sound"];
+  const key = url.searchParams.get("area") || "sound";
+  const area = Object.hasOwn(AREAS, key) ? AREAS[key] : null;
   const origin = allowOrigin(req.headers.get("origin"));
   const cors = origin ? { "access-control-allow-origin": origin, vary: "origin" } : { vary: "origin" };
   if (!area) return new Response(JSON.stringify({ error: "unknown area" }), { status: 400, headers: { ...cors, "content-type": "application/json" } });

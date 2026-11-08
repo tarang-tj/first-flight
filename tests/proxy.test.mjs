@@ -27,6 +27,15 @@ test("unknown areas are refused without an upstream call", async () => {
   assert.equal(calls.length, 0);
 });
 
+test("inherited object keys are not areas", async () => {
+  const calls = stubFetch(200, "{}");
+  for (const key of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+    const res = await handler(new Request(`https://x.vercel.app/api/air?area=${key}`));
+    assert.equal(res.status, 400, key);
+  }
+  assert.equal(calls.length, 0);
+});
+
 test("other origins get no CORS grant; upstream errors are not cached", async () => {
   stubFetch(429, "slow down");
   const res = await handler(new Request("https://x.vercel.app/api/air", { headers: { origin: "https://evil.example" } }));

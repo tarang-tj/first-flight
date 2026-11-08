@@ -144,7 +144,7 @@ def leg_record(doc, rows):
 
 
 def scan(stream, date):
-    scanned = boeing = 0
+    scanned = boeing = skipped = 0
     legs = []
     with tarfile.open(fileobj=stream, mode="r|*") as tar:
         for member in tar:
@@ -165,15 +165,18 @@ def scan(stream, date):
                 continue
             try:
                 doc = json.loads(raw_bytes(blob))
-            except (ValueError, OSError, EOFError):
+                if not isinstance(doc, dict):
+                    raise ValueError("trace is not an object")
+                found = [r for r in (leg_record(doc, rows) for rows in split_legs(doc.get("trace") or [])) if r]
+            except (ValueError, OSError, EOFError, zlib.error, KeyError, TypeError, IndexError) as exc:
+                # One bad trace skips that trace, never the day.
+                skipped += 1
+                sys.stderr.write("skipped trace %s: %s\n" % (member.name, exc))
                 continue
             boeing += 1
-            for rows in split_legs(doc.get("trace") or []):
-                rec = leg_record(doc, rows)
-                if rec:
-                    legs.append(rec)
+            legs.extend(found)
     legs.sort(key=lambda r: r["start"])
-    return {"date": date, "scanned": scanned, "boeing": boeing, "legs": legs}
+    return {"date": date, "scanned": scanned, "boeing": boeing, "skipped": skipped, "legs": legs}
 
 
 if __name__ == "__main__":

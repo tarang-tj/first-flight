@@ -81,7 +81,8 @@ class FirstFlightRules(LedgerCase):
         self.assertTrue(fr["aaaaa2"]["counted"])
         self.assertEqual(self.total(ledger), 1)
         jan = ledger["months"][0]
-        self.assertTrue(jan["warmup"])
+        self.assertTrue(jan["warmup"] and jan["warmupPartial"])
+        self.assertEqual(jan["countedFrom"], "2025-01-30")
         self.assertEqual(sum(jan["firstFlights"].values()), 0)
 
     def test_ground_runs_and_altitude_spikes_never_count(self):
@@ -131,6 +132,105 @@ class FirstFlightRules(LedgerCase):
             "2025-03-10": [leg("fffff2", ts("2025-03-10"), "KPAE", "KPAE", ("BOE337",), type="B762")]})
         self.assertEqual((fr["fffff1"]["program"], fr["fffff2"]["program"], fr["fffff3"]["program"]),
                          ("unknown", "767", "777X"))
+
+
+class MidnightAndMonths(LedgerCase):
+    def test_overflight_of_kbfi_is_not_a_return(self):
+        """Sea-Tac arrivals pass low over KBFI: touched, but no takeoff or landing there."""
+        fly = climb(ts("2025-03-12"), peak=30000)
+        over = leg("33333a", ts("2025-03-12"), None, None, ("ASA405",), path=fly, boeingOp=False,
+                   touched=["KBFI"])
+        _, fr = self.build({
+            "2025-01-01": [],
+            "2025-03-01": [leg("33333a", ts("2025-03-01"), "KRNT", "KBFI")],
+            "2025-03-09": [leg("33333a", ts("2025-03-09"), "KBFI", "KFOO", ("ASA17",), boeingOp=False,
+                               path=climb(ts("2025-03-09"), peak=30000))],
+            "2025-03-12": [over]})
+        self.assertEqual(fr["33333a"]["delivery"], {"t": ts("2025-03-09"), "callsign": "ASA17"})
+
+    def test_landing_at_boeing_field_still_voids_a_delivery(self):
+        _, fr = self.build({
+            "2025-01-01": [],
+            "2025-03-01": [leg("44444a", ts("2025-03-01"), "KRNT", "KBFI")],
+            "2025-03-09": [leg("44444a", ts("2025-03-09"), "KBFI", "KFOO", ("ASA17",), boeingOp=False,
+                               path=climb(ts("2025-03-09"), peak=30000))],
+            "2025-03-12": [leg("44444a", ts("2025-03-12"), None, "KBFI", ("ASA17",), boeingOp=False, path=None, maxAlt=30000)]})
+        self.assertIsNone(fr["44444a"]["delivery"])
+
+    def _split(self, gap=20, p2_from=None):
+        mid = ts("2025-03-02", 0)
+        p1 = [[mid - 600 + i * 20, 47.9 + i * 0.01, -122.3, 1000 + i * 600] for i in range(30)]
+        p1.append([mid - 20, 47.9 + 0.3, -122.3, 19000])
+        p2 = [[mid - 20 + gap + i * 20, 48.21 + i * 0.01, -122.3, 19000 - i * 100] for i in range(12)]
+        a = leg("55555a", p1[0][0], "KPAE", None, ("BOE301",), path=p1)
+        b = leg("55555a", p2[0][0], p2_from, "KPAE", ("BOE301",), path=p2)
+        return a, b
+
+    def test_flight_split_at_utc_midnight_is_one_flight(self):
+        a, b = self._split()
+        ledger, fr = self.build({"2025-01-01": [], "2025-03-01": [a], "2025-03-02": [b]})
+        ff = fr["55555a"]
+        self.assertEqual(fr["55555a"]["flights"], 1)
+        self.assertEqual(ff["firstFlight"]["to"], "KPAE")
+        self.assertEqual(ff["firstFlight"]["durationS"], b["end"] - a["start"])
+        self.assertTrue(ff["counted"])
+        self.assertEqual(self.total(ledger), 1)
+
+    def test_split_part_one_that_is_not_airborne_alone_is_still_a_first_flight(self):
+        mid = ts("2025-03-02", 0)
+        p1 = [[mid - 300 + i * 20, 47.9063, -122.28, 0] for i in range(14)] + [[mid - 20, 47.91, -122.28, 900]]
+        p2 = [[mid + i * 20, 47.95 + i * 0.01, -122.28, 2000 + i * 900] for i in range(14)]
+        a = leg("66666a", p1[0][0], "KPAE", None, ("BOE302",), path=p1)
+        b = leg("66666a", p2[0][0], None, "KPAE", ("BOE302",), path=p2)
+        ledger, fr = self.build({"2025-01-01": [], "2025-03-01": [a], "2025-03-02": [b]})
+        self.assertTrue(fr["66666a"]["counted"])
+        self.assertEqual(fr["66666a"]["born"], "KPAE")
+
+    def test_distant_or_late_legs_are_not_merged(self):
+        a, b = self._split(gap=3000)
+        _, fr = self.build({"2025-01-01": [], "2025-03-01": [a], "2025-03-02": [b]})
+        self.assertEqual(fr["55555a"]["flights"], 2)
+        a, b = self._split()
+        for p in b["path"]:
+            p[1] += 3.0  # 330 km away: a different flight
+        _, fr = self.build({"2025-01-01": [], "2025-03-01": [a], "2025-03-02": [b]})
+        self.assertEqual(fr["55555a"]["flights"], 2)
+
+    def test_months_are_pacific_time(self):
+        # 2025-03-31 17:30 PDT is 2025-04-01 00:30 UTC: still March.
+        t = int(datetime.datetime(2025, 4, 1, 0, 30, tzinfo=datetime.timezone.utc).timestamp())
+        self.assertEqual(outputs.month_of(t), "2025-03")
+        ledger, fr = self.build({"2025-01-01": [], "2025-04-01": [leg("77777a", t)]})
+        self.assertTrue(fr["77777a"]["counted"])
+        by = {m["month"]: m for m in ledger["months"]}
+        self.assertEqual(sum(by["2025-03"]["firstFlights"].values()), 1)
+        self.assertEqual(sum(by["2025-04"]["firstFlights"].values()), 0)
+        self.assertEqual(ledger["timezone"], "America/Los_Angeles")
+        self.assertTrue(any("Pacific" in n for n in ledger["notes"]))
+
+    def test_no_sliver_month_before_coverage(self):
+        # Day 1 UTC is the evening of Dec 31 in Pacific time: no 2024-12 row.
+        ledger, _ = self.build({"2025-01-01": [], "2025-02-01": []})
+        self.assertEqual(ledger["months"][0]["month"], "2025-01")
+
+    def test_unknown_program_is_carried_explicitly(self):
+        ledger, _ = self.build({"2025-01-01": [], "2025-03-01": [
+            leg("88888a", ts("2025-03-01"), "KPAE", "KPAE", ("BOE335",)),
+            leg("88888b", ts("2025-03-02"), "KPAE", "KPAE", ("BOE336",), type="B762")]})
+        mar = [m for m in ledger["months"] if m["month"] == "2025-03"][0]
+        self.assertEqual(mar["unknown"], {"firstFlights": 1, "deliveriesSeen": 0})
+        self.assertEqual(ledger["unknownProgram"]["firstFlights"], 1)
+
+    def test_partial_warmup_month_says_when_counting_starts(self):
+        # Coverage from 2025-01-15: warm-up ends 2025-02-14 00:00 UTC (Feb 13 Pacific).
+        ledger, _ = self.build({"2025-01-15": [], "2025-04-01": []})
+        by = {m["month"]: m for m in ledger["months"]}
+        self.assertTrue(by["2025-01"]["warmup"] and not by["2025-01"].get("warmupPartial"))
+        self.assertTrue(by["2025-02"]["warmup"] and by["2025-02"]["warmupPartial"])
+        self.assertEqual(by["2025-02"]["countedFrom"], "2025-02-13")
+        self.assertNotIn("warmup", by["2025-03"])
+        self.assertEqual(ledger["warmupDays"], 30)
+        self.assertEqual(ledger["warmupEndsAt"], ts("2025-02-14", 0))
 
 
 class DeliveryAndCoverage(LedgerCase):
@@ -208,7 +308,8 @@ class Outputs(LedgerCase):
 
     def test_ledger_and_airframe_shapes(self):
         ledger, fr = self.build({"2025-01-01": [], "2025-03-01": [leg("66666a", ts("2025-03-01"))]})
-        self.assertEqual(sorted(ledger), ["coverage", "generatedAt", "months", "notes", "programs"])
+        self.assertEqual(sorted(ledger), ["countedFrom", "coverage", "generatedAt", "months", "notes", "programs",
+                                         "timezone", "unknownProgram", "warmupDays", "warmupEndsAt"])
         self.assertEqual(sorted(ledger["months"][0]["firstFlights"]), ["737", "767", "777", "777X", "unknown"])
         a = fr["66666a"]
         for key in ("hex", "reg", "country", "program", "born", "firstFlight", "flights", "lastSeen", "delivery", "flightTest"):

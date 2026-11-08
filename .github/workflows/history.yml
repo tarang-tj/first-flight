@@ -27,11 +27,22 @@ jobs:
       chunks: ${{ steps.p.outputs.chunks }}
     steps:
       - id: p
+        env:
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+          CHUNK: ${{ inputs.chunk }}
         run: |
           python3 - <<'EOF' >> "$GITHUB_OUTPUT"
-          import datetime as d, json
-          s = d.date.fromisoformat("${{ inputs.start }}"); e = d.date.fromisoformat("${{ inputs.end }}")
-          n = int("${{ inputs.chunk }}")
+          import datetime as d, json, os, re, sys
+          for k in ("START", "END"):
+              if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", os.environ[k]):
+                  sys.exit("%s must be YYYY-MM-DD" % k)
+          if not re.fullmatch(r"\d{1,2}", os.environ["CHUNK"]) or int(os.environ["CHUNK"]) < 1:
+              sys.exit("CHUNK must be 1 to 99")
+          s = d.date.fromisoformat(os.environ["START"]); e = d.date.fromisoformat(os.environ["END"])
+          n = int(os.environ["CHUNK"])
+          if e < s or (e - s).days > 800:
+              sys.exit("bad range")
           days = [(s + d.timedelta(i)).isoformat() for i in range((e - s).days + 1)]
           chunks = [",".join(days[i:i + n]) for i in range(0, len(days), n)]
           print("chunks=" + json.dumps(chunks))
@@ -50,9 +61,10 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          MATRIX_DAYS: ${{ matrix.days }}
         run: |
           mkdir -p out
-          for day in $(echo "${{ matrix.days }}" | tr ',' ' '); do
+          for day in $(echo "$MATRIX_DAYS" | tr ',' ' '); do
             y=${day%%-*}; tagday=$(echo "$day" | tr '-' '.')
             repo="adsblol/globe_history_$y"
             urls=""
@@ -86,14 +98,22 @@ jobs:
           path: art
           merge-multiple: true
       - name: Commit results
+        env:
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
         run: |
-          for f in art/*.json; do
-            day=$(basename "$f" .json); y=${day%%-*}
-            mkdir -p "data/history/$y"
-            gzip -9 -n -c "$f" > "data/history/$y/$day.json.gz"
-          done
+          set -euo pipefail
+          # store never replaces a good stored day with a missing/failed marker.
+          for f in art/*.json; do python3 tools/day_files.py store "$f" data/history; done
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/history
-          git commit -m "data: scan history ${{ inputs.start }} to ${{ inputs.end }}" || exit 0
-          for i in 1 2 3; do git pull --rebase -q && git push -q && break; sleep 5; done
+          if git diff --cached --quiet; then echo "no new day files"; exit 0; fi
+          git commit -q -m "data: scan history $START to $END"
+          for i in 1 2 3; do
+            if git pull --rebase -q && git push -q; then echo "pushed"; exit 0; fi
+            git rebase --abort 2>/dev/null || true
+            sleep 5
+          done
+          echo "::error::could not push the scanned days after 3 tries"
+          exit 1

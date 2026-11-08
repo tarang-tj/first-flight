@@ -2,6 +2,7 @@
 import datetime
 
 from .icao import country
+from .merge import merge_midnight_splits
 from .legs import (BIRTH_FIELDS, FIELDS, airborne, is_boe, is_flight_test,
                    max_alt_ft, program_of)
 
@@ -21,15 +22,20 @@ def group_by_hex(days):
             hx = leg.get("hex")
             if hx and leg.get("start") is not None:
                 by.setdefault(hx, []).append(leg)
-    for legs in by.values():
-        legs.sort(key=lambda g: (g["start"], g.get("end", 0)))
+    for hx in by:
+        by[hx].sort(key=lambda g: (g["start"], g.get("end", 0)))
+        by[hx] = merge_midnight_splits(by[hx])
     return by
 
 
 def _returned(legs, after_start):
-    """True when the airframe touches a Boeing field again after `after_start`."""
-    return any(g["start"] > after_start and (set(g.get("touched") or []) & set(FIELDS)
-                                             or g.get("to") in FIELDS) for g in legs)
+    """True when a later leg departs from or lands at a Boeing field.
+
+    `touched` is deliberately ignored: Sea-Tac arrivals overfly KBFI low, and
+    an overflight is not a return.
+    """
+    return any(g["start"] > after_start and (g.get("from") in FIELDS or g.get("to") in FIELDS)
+               for g in legs)
 
 
 def find_delivery(legs, first_boe_start):
