@@ -20,7 +20,7 @@ NOTES = [
     "Boeing's own flight-test fleet (for example N779X*, N2775x, N836BA, and typed Boeing-owned jets) is excluded from production counts.",
     "Program comes from the birth field and ICAO type code: Renton is 737; Paine Field jets use their type code, else 'unknown'. 737 MAX 10s at Paine Field are read as 737 because the 737 North Line in Everett began low-rate production in July 2026.",
     "Deliveries seen are departures from a Boeing field under a non-BOE callsign with no return in the history. They are a sky estimate, not Boeing's delivery count.",
-    "Reported deliveries are Boeing's monthly figures as relayed by Forecast International, checked against Boeing's quarterly releases. Boeing's 737 count includes P-8 and 737-800A airframes; its 767 count includes the KC-46 airframe.",
+    "Reported deliveries are Boeing's monthly figures as relayed by Forecast International, checked against Boeing's quarterly releases. Boeing's 737 count includes the 737-800A (the P-8 airframe); its 767 count includes the KC-46 airframe.",
     "Receiver coverage is uneven and the scanner drops days it cannot read. Missing days are listed in coverage and the sky count is a floor, not a census.",
 ]
 

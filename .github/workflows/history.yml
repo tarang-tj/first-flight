@@ -62,26 +62,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MATRIX_DAYS: ${{ matrix.days }}
-        run: |
-          mkdir -p out
-          for day in $(echo "$MATRIX_DAYS" | tr ',' ' '); do
-            y=${day%%-*}; tagday=$(echo "$day" | tr '-' '.')
-            repo="adsblol/globe_history_$y"
-            urls=""
-            for flavor in prod staging; do
-              # API asset URLs: the browser_download_url route returned 504s on 2026-11-08.
-              urls=$(gh api "repos/$repo/releases/tags/v$tagday-planes-readsb-$flavor-0" --jq '[.assets[] | select(.name|test("\\.tar\\.a[a-z]$"))] | sort_by(.name) | map(.url) | join(" ")' 2>/dev/null || true)
-              total=$(gh api "repos/$repo/releases/tags/v$tagday-planes-readsb-$flavor-0" --jq '[.assets[].size] | add' 2>/dev/null || echo 0)
-              if [ -n "$urls" ] && [ "${total:-0}" -gt 1000000000 ]; then echo "$day: $flavor ($total bytes)"; break; fi
-              urls=""
-            done
-            if [ -z "$urls" ]; then echo "$day: no usable release" ; echo "{\"date\":\"$day\",\"missing\":true}" > "out/$day.json"; continue; fi
-            if ( for u in $urls; do curl -fsSL --retry 5 --retry-delay 10 -H "Accept: application/octet-stream" -H "Authorization: Bearer $GH_TOKEN" "$u" || exit 1; done ) | python3 tools/scan_history.py "$day" > "out/$day.json"; then
-              python3 -c "import json,sys;d=json.load(open('out/$day.json'));print(sys.argv[1], 'scanned', d['scanned'], 'boeing', d['boeing'], 'legs', len(d['legs']))" "$day"
-            else
-              echo "$day: scan failed"; echo "{\"date\":\"$day\",\"failed\":true}" > "out/$day.json"
-            fi
-          done
+        # One scan implementation for backfill and the daily job: a GitHub API
+        # error fails this job; a release that does not exist is a "missing" day.
+        run: bash scripts/scan-days.sh out $(echo "$MATRIX_DAYS" | tr ',' ' ')
       - uses: actions/upload-artifact@v4
         with:
           name: scan-${{ strategy.job-index }}

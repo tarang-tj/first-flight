@@ -1,0 +1,107 @@
+name: deploy-pages
+# Daily: scan flight history (adsb.lol, ODbL), rebuild the ledger, commit the
+# small results, then publish. Two jobs so a push can never cancel the daily
+# scan: `data` has its own concurrency group; `deploy` always ships main.
+#
+# adsb.lol publishes day D's prod archive at about 03:30 UTC on D+1 and the
+# staging archive by about 07:00 UTC (release published_at, checked 2026-11-08),
+# so the cron at 07:30 UTC finds yesterday. Any missing/failed marker from the
+# last 7 days is retried on every run as the backup, and a good stored day is
+# never replaced by a marker. If the data job cannot push, it fails the run.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 7 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+jobs:
+  data:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: pages-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Scan pending days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          days=$(python3 tools/day_files.py pending --history data/history)
+          echo "pending: ${days:-none}"
+          if [ -n "$days" ]; then
+            # scan-days.sh writes a marker for a day it cannot fetch or read.
+            bash scripts/scan-days.sh out $days
+            for f in out/*.json; do python3 tools/day_files.py store "$f" data/history; done
+          fi
+      - name: Commit and push scanned days
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/history
+          if git diff --cached --quiet; then echo "no new day files"; exit 0; fi
+          git commit -q -m "data: daily scan"
+          for i in 1 2 3; do
+            if git pull --rebase -q && git push -q; then echo "pushed"; exit 0; fi
+            git rebase --abort 2>/dev/null || true
+            sleep 10
+          done
+          echo "::error::could not push the scanned days after 3 tries"
+          exit 1
+      - name: Rebuild ledger and push
+        run: |
+          set -euo pipefail
+          for i in 1 2 3; do
+            git pull --rebase -q
+            python3 tools/build_ledger.py
+            git add web/data
+            if git diff --cached --quiet; then echo "ledger unchanged"; exit 0; fi
+            git commit -q -m "data: rebuild ledger"
+            if git push -q; then echo "pushed"; exit 0; fi
+            # Lost a race: drop the generated commit and rebuild on the new tip.
+            git reset -q --hard HEAD~1
+            sleep 10
+          done
+          echo "::error::could not push the rebuilt ledger after 3 tries"
+          exit 1
+  deploy:
+    needs: data
+    # Runs after a successful or skipped data job. A failed data job fails the run.
+    if: ${{ !cancelled() && (needs.data.result == 'success' || needs.data.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Gate
+        run: npm run gate
+      - name: Stage site
+        run: |
+          mkdir -p _site
+          cp -R index.html web LICENSE DATA-CREDITS.md _site/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

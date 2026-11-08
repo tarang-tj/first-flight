@@ -22,3 +22,24 @@ class FlightSpan(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from tools.ledger.legs import flew_as_airline, is_flight_test  # noqa: E402
+
+
+class FlightTestFleet(unittest.TestCase):
+    """The aircraft database keeps BOEING CO as owner on delivered airline jets
+    (verifier, 2026-11-08: ac5eb4 N8965Q later flies as SWA2208)."""
+
+    def test_delivered_airline_jet_is_not_test_fleet(self):
+        legs = [{"callsigns": ["BOE611"]}, {"callsigns": ["SWA2208"]}]
+        self.assertTrue(flew_as_airline(legs))
+        self.assertFalse(is_flight_test("N8965Q", "BOEING CO", "B38M", airline_seen=True, seen_before_warmup=False))
+
+    def test_new_jet_first_seen_after_warmup_is_not_test_fleet(self):
+        self.assertFalse(is_flight_test("N1234B", "BOEING CO", "B38M", airline_seen=False, seen_before_warmup=False))
+
+    def test_known_test_registrations_and_old_boeing_jets_are_test_fleet(self):
+        self.assertTrue(is_flight_test("N779XW", None, None))
+        self.assertTrue(is_flight_test("N60659", "BOEING CO", "B738", airline_seen=False, seen_before_warmup=True))
+        self.assertFalse(flew_as_airline([{"callsigns": ["BOE1", "RDN814", "N60659"]}]))

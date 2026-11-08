@@ -44,15 +44,34 @@ def max_alt_ft(leg):
     return int(alts[0])
 
 
-def is_flight_test(reg, own_op, typ):
-    """Boeing's own test fleet: known registrations, or a typed Boeing-owned jet.
+AIRLINE_CS_RE = re.compile(r"^[A-Z]{3}\d")
 
-    Brand-new production jets are usually untyped in the aircraft database, so
-    a Boeing-owned airframe with no type is NOT assumed to be test fleet.
+
+def flew_as_airline(legs):
+    """True if the airframe ever used an airline-style callsign (SWA2208,
+    UAL737), other than Boeing's own BOE and RDN."""
+    for g in legs:
+        for c in g.get("callsigns") or []:
+            c = str(c)
+            if AIRLINE_CS_RE.match(c) and not c.startswith(("BOE", "RDN")):
+                return True
+    return False
+
+
+def is_flight_test(reg, own_op, typ, airline_seen=False, seen_before_warmup=True):
+    """Boeing's own test fleet: known test registrations, or a typed
+    Boeing-owned jet that never flew for an airline and was already flying
+    when our history starts.
+
+    The aircraft database keeps "BOEING CO" as owner on many delivered jets
+    (Southwest, United and American 737s), so ownership alone is not enough:
+    a jet that later flies as SWA2208 is a delivered production jet. Brand-new
+    jets are usually untyped, so an untyped Boeing-owned jet is not test fleet.
     """
     if reg and TEST_REG_RE.match(reg):
         return True
-    return bool(own_op) and str(own_op).upper().startswith("BOEING") and bool(typ)
+    boeing_owned = bool(own_op) and str(own_op).upper().startswith("BOEING") and bool(typ)
+    return boeing_owned and not airline_seen and seen_before_warmup
 
 
 def program_of(born, types):

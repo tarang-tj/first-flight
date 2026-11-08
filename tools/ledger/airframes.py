@@ -3,7 +3,7 @@ import datetime
 
 from .icao import country
 from .merge import merge_midnight_splits
-from .legs import (BIRTH_FIELDS, FIELDS, airborne, flight_duration_s, is_boe, is_flight_test,
+from .legs import (BIRTH_FIELDS, FIELDS, airborne, flight_duration_s, flew_as_airline, is_boe, is_flight_test,
                    max_alt_ft, program_of)
 
 WARMUP_DAYS = 30
@@ -62,7 +62,8 @@ def build_airframes(by_hex, warm_end):
         own = next((g["ownOp"] for g in reversed(legs) if g.get("ownOp")), None)
         types = [g["type"] for g in legs if g.get("type")]
         born = first.get("from") if first.get("from") in FIELDS else None
-        test = is_flight_test(reg, own, types[-1] if types else None)
+        test = is_flight_test(reg, own, types[-1] if types else None,
+                              airline_seen=flew_as_airline(legs), seen_before_warmup=first["start"] < warm_end)
         boe_call = next((c for c in first.get("callsigns") or [] if str(c).startswith("BOE")), None)
         counted = (is_boe(first) and born in BIRTH_FIELDS and not test and first["start"] >= warm_end)
         out.append({

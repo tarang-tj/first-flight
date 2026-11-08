@@ -362,7 +362,8 @@ class DeliveriesFile(unittest.TestCase):
             self.assertEqual(r["737"] + r["767"] + r["777"] + r["787"], r["total"], r["month"])
             self.assertTrue(r["source"].startswith("https://"), r["month"])
         derived = [r["month"] for r in self.doc["rows"] if r["derived"]]
-        self.assertEqual(derived, ["2025-12"])
+        # 2025-03 767 is Q1 minus Jan and Feb (verifier, 2026-11-08); 2025-12 is Q4 minus Oct and Nov.
+        self.assertEqual(derived, ["2025-03", "2025-12"])
         for q in self.doc["quarters"]:
             self.assertTrue(q["source"].startswith("https://boeing.mediaroom.com/"))
 
