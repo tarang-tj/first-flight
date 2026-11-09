@@ -4,7 +4,7 @@
 export const RATES = Object.freeze([1, 60, 600, 3600, 86400]);
 export const RATE_LABELS = Object.freeze({ 1: "1x", 60: "60x", 600: "600x", 3600: "3600x", 86400: "1 day/s" });
 
-export function createSkyClock({ span, t, rate = 1, playing = true } = {}) {
+export function createSkyClock({ span, t, rate = 1, playing = true, restartAt } = {}) {
   if (!Array.isArray(span) || !(span[1] > span[0])) throw new Error("sky clock needs span [t0, t1]");
   const [lo, hi] = span;
   const clamp = (x) => Math.min(hi, Math.max(lo, x));
@@ -23,7 +23,8 @@ export function createSkyClock({ span, t, rate = 1, playing = true } = {}) {
     },
     set(x) { if (Number.isFinite(x)) state.t = clamp(x); return state.t; },
     setRate(r) { if (RATES.includes(r)) state.rate = r; return state.rate; },
-    play() { if (state.t >= hi) state.t = lo; state.playing = true; },
+    /** Play from the end restarts at restartAt (default: the start of the span). */
+    play() { if (state.t >= hi) state.t = clamp(Number.isFinite(restartAt) ? restartAt : lo); state.playing = true; },
     pause() { state.playing = false; },
     toggle() { if (state.playing) this.pause(); else this.play(); return state.playing; },
   };

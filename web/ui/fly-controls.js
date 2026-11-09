@@ -10,7 +10,7 @@ export function createFlyControls(root, world) {
   const touch = isTouch();
   const cleanups = [];
   const wrap = h("div.fly-ui" + (touch ? ".fly-touch" : ".fly-desk"), { hidden: true });
-  let seen = false;
+  let seen = false, resetPads = () => {};
 
   if (touch) {
     const knob = h("div.fly-knob");
@@ -34,7 +34,7 @@ export function createFlyControls(root, world) {
       move(e); e.preventDefault();
     });
     pad.addEventListener("pointermove", (e) => { if (e.pointerId === id) move(e); });
-    pad.addEventListener("pointerup", end); pad.addEventListener("pointercancel", end);
+    pad.addEventListener("pointerup", end); pad.addEventListener("pointercancel", end); pad.addEventListener("lostpointercapture", end);
 
     const lookArea = h("div.fly-look", { "aria-label": "Look" });
     let lp = null;
@@ -45,7 +45,9 @@ export function createFlyControls(root, world) {
       lp.x = e.clientX; lp.y = e.clientY;
     });
     const lend = (e) => { if (lp && e.pointerId === lp.id) lp = null; };
-    lookArea.addEventListener("pointerup", lend); lookArea.addEventListener("pointercancel", lend);
+    lookArea.addEventListener("pointerup", lend); lookArea.addEventListener("pointercancel", lend); lookArea.addEventListener("lostpointercapture", lend);
+    // hiding the pads (Follow) drops pointer capture without a pointerup, so forget any touch in progress
+    resetPads = () => { id = null; lp = null; knob.style.transform = ""; };
 
     const hold = (label, dir, cls) => {
       const b = h("button.fly-vert" + cls, { type: "button", "aria-label": label }, dir > 0 ? "▲" : "▼");
@@ -71,7 +73,7 @@ export function createFlyControls(root, world) {
       wrap.hidden = false;
       if (!touch) { seen = false; wrap.querySelector(".fly-hint")?.classList.remove("fly-fade"); }
     },
-    hide() { wrap.hidden = true; ff.setStick(0, 0); ff.setVertical(0); },
+    hide() { wrap.hidden = true; resetPads(); ff.setStick(0, 0); ff.setVertical(0); },
     dispose() { cleanups.forEach((f) => f()); wrap.remove(); ff.setStick(0, 0); ff.setVertical(0); },
   };
 }

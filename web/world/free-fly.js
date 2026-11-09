@@ -68,9 +68,9 @@ export function createFreeFly(camera, canvas, groundAt, rig) {
 
   const api = {
     enable() { if (wanted) return; wanted = true; paused = false; adopt(); sync(); },
-    disable() { if (!wanted) return; if (live()) handBack(); cancelGlide(); wanted = false; sync(); },
+    disable() { if (!wanted) return; if (live()) handBack(); cancelGlide(); wanted = false; releaseKeys(); sync(); },
     /** Chase takes over the camera; free flight remembers it was on. */
-    pause() { if (live()) { cancelGlide(); paused = true; sync(); } },
+    pause() { if (live()) { cancelGlide(); paused = true; releaseKeys(); sync(); } },
     resume() { if (wanted && paused) { paused = false; adopt(); sync(); } },
     get active() { return live(); },
     get speedMs() { return speed; },
@@ -107,6 +107,8 @@ export function createFreeFly(camera, canvas, groundAt, rig) {
     input.boost = down.has("boost");
     if (input.fwd || input.strafe || input.vert) cancelGlide();
   };
+  // keyups are ignored while free flight is off, so held keys must be dropped when it stops
+  function releaseKeys() { down.clear(); pushKeys(); }
   const typing = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
   const onKey = (e, on) => {
     if (!live() || typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;

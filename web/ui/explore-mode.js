@@ -2,9 +2,10 @@
 // that were really aloft then. Lane F supplies free flight, places and fly controls; every piece of
 // that is optional here so the mode still boots (orbit camera, no places bar) if it is missing.
 import { h } from "./dom.js";
+import { attachPick } from "./explore-pick.js";
 import { createTimeDial } from "./time-dial.js";
 import { createJetMarkers } from "./jet-markers.js";
-import { nearby, openingPose } from "./explore-camera.js";
+import { nearby, openingPose, screenJetsOf } from "./explore-camera.js";
 import { createSkyClock } from "../air/sky-clock.js";
 import { createSkyFeed, tailSeconds, nearCount } from "../air/sky-feed.js";
 import { createSkyTraffic } from "../world/sky-traffic.js";
@@ -30,18 +31,34 @@ export function createExploreMode(ctx) {
     const best = await feed.bestMoment(); // newest busy moment with the most jets near Puget Sound
     if (!my.alive) return;
     // Open fast (the memory layer draws the region) but an hour before the peak, paused until the world is up.
-    const clock = createSkyClock({ span: index.span, t: (best?.t ?? fallbackT) - 3600, rate: 600, playing: false });
+    const clock = createSkyClock({ span: index.span, t: (best?.t ?? fallbackT) - 3600, rate: 600, playing: false, restartAt: (best?.t ?? fallbackT) - 3600 });
     my.clock = clock;
     const traffic = world ? createSkyTraffic(world) : null;
     my.traffic = traffic;
+    my.offs.push(() => traffic?.dispose()); // register each teardown as the thing is created, so a leave during an await still cleans up
     const fly = world?.freeFly;
 
     const sel = h("div.ex-sel", { hidden: true });
-    const dial = createTimeDial({ clock, index, onChange: (why) => { tickSun(true); refresh(true); if (why === "jump" || why === "now") { follow(null); select(null); feed.ensure(clock.t).then(() => my.alive && my.frameJets?.(1800)); } } });
+    let jumpSeq = 0, scrubTimer = 0;
+    const settle = () => { my.scrubbing = false; lastEnsure = clock.t; return feed.ensure(clock.t); };
+    const dial = createTimeDial({ clock, index, onChange: (why) => {
+      my.touched = true; jumpSeq++;
+      tickSun(true);
+      if (why === "scrub") { // load months only once the slider has been still for a moment
+        my.scrubbing = true; clearTimeout(scrubTimer); scrubTimer = setTimeout(settle, 150);
+      } else if (why === "jump" || why === "now") {
+        follow(null); select(null);
+        const seq = jumpSeq;
+        settle().then(() => my.alive && seq === jumpSeq && !my.followed && my.frameJets?.(1800));
+      }
+      refresh(false);
+    } });
+    my.offs.push(() => { clearTimeout(scrubTimer); dial.dispose(); });
     chrome.stage.append(h("div.ex-wrap", {}, sel, dial.el));
     const root = chrome.stage.parentElement;
     const hud = h("div.ex-hud", { "aria-hidden": "true" });
     const markers = world ? createJetMarkers({ root, world }) : null;
+    my.offs.push(() => markers?.dispose());
     root.append(hud);
     my.nodes.push(hud);
 
@@ -84,25 +101,12 @@ export function createExploreMode(ctx) {
       if (!list.length) { my.visited.clear(); list = all; }
       const pick = list[0], id = `sky:${pick.a.flight.hex}`;
       my.visited.add(pick.a.flight.hex);
-      traffic?.sync(feed.activeAt(clock.t, tailSeconds(clock.rate)), id); // make sure the handle exists before chasing
+      jumpSeq++;
       select(id);
       follow(id);
     }
 
-    // Tap a jet: select it (the airframe card, when the airframe is known, is opened by main.js)
-    let down = null;
-    const hit = (e) => e.target === world?.canvas || e.target.classList?.contains("fly-look");
-    const onDown = (e) => { down = hit(e) ? [e.clientX, e.clientY] : null; };
-    const onUp = (e) => {
-      if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;
-      down = null;
-      let id = null;
-      try { id = world.pick?.(e.clientX, e.clientY) ?? null; } catch { id = null; }
-      if (id && id.startsWith("sky:")) select(id); else if (!id) { follow(null); select(null); }
-    };
-    root.addEventListener("pointerdown", onDown);
-    root.addEventListener("pointerup", onUp);
-    my.offs.push(() => { root.removeEventListener("pointerdown", onDown); root.removeEventListener("pointerup", onUp); });
+    my.offs.push(attachPick({ world, ctx, chrome, onSelect: select, onClear: () => { follow(null); select(null); } }));
 
     try { fly?.enable?.(); } catch (err) { console.warn(`[explore] freeFly.enable failed: ${err?.message || err}`); }
     optional("./fly-controls.js").then((m) => {
@@ -113,7 +117,7 @@ export function createExploreMode(ctx) {
       if (!my.alive || !m?.PLACES || !fly?.goTo) return;
       const bar = h("nav.ex-places", { "aria-label": "Places" }, [
         h("button.ex-chip.is-jet", { type: "button", text: "Find a jet", onclick: findJet }),
-        ...m.PLACES.map((p) => h("button.ex-chip", { type: "button", title: p.blurb || "", text: p.label, onclick: () => { follow(null); select(null); cameraTo(m.placePose(p), 2600); } })),
+        ...m.PLACES.map((p) => h("button.ex-chip", { type: "button", title: p.blurb || "", text: p.label, onclick: () => { jumpSeq++; follow(null); select(null); cameraTo(m.placePose(p), 2600); } })),
       ]);
       root.append(bar);
       my.nodes.push(bar);
@@ -128,7 +132,7 @@ export function createExploreMode(ctx) {
       try { world?.setSun?.(new Date(clock.t * 1000)); } catch (err) { console.warn(`[explore] setSun failed: ${err?.message || err}`); }
     }
     function refresh(force) {
-      if (force || Math.abs(clock.t - lastEnsure) > 3600) { lastEnsure = clock.t; feed.ensure(clock.t); }
+      if (!my.scrubbing && (force || Math.abs(clock.t - lastEnsure) > 3600)) { lastEnsure = clock.t; feed.ensure(clock.t); }
       const acts = feed.activeAt(clock.t, tailSeconds(clock.rate));
       const memory = clock.rate >= MEMORY_RATE ? feed.memoryAt(clock.t) : [];
       const gone = traffic ? traffic.sync(acts, my.selected, memory) : [];
@@ -150,14 +154,14 @@ export function createExploreMode(ctx) {
     frameJets(0);
     refresh(true);
     // Start the clock once imagery is in (or after 8 s), so nobody misses the busy hour while tiles stream.
-    Promise.race([world?.imageryReady, new Promise((r) => setTimeout(r, 8000))]).catch(() => {}).then(() => { if (my.alive && !clock.playing && clock.t < clock.span[1]) clock.play(); });
+    Promise.race([world?.imageryReady, new Promise((r) => setTimeout(r, 8000))]).catch(() => {}).then(() => { if (my.alive && !my.touched && !clock.playing && clock.t < clock.span[1]) clock.play(); });
     let quietS = 0;
 
     my.offs.push(ticker.add((dt, nowMs) => {
       if (!ready) return;
       clock.tick(dt);
       // Skip quiet hours at fast rates: after 3 real seconds with nothing near Puget Sound, jump to just before the next takeoff there.
-      quietS = clock.playing && clock.rate >= MEMORY_RATE && my.near === 0 && !my.followed ? quietS + dt : 0;
+      quietS = clock.playing && clock.rate >= MEMORY_RATE && my.near === 0 && !my.followed && feed.isReady(clock.t) ? quietS + dt : 0;
       if (quietS > 3) {
         quietS = 0;
         const next = feed.nextNearTakeoff(clock.t);
@@ -172,7 +176,7 @@ export function createExploreMode(ctx) {
         if (Number.isFinite(alt) && fly.active) hud.append("ALT ", h("b", { text: Math.round(alt * FT_PER_M).toLocaleString("en-US") }), " ft", h("br"), "SPEED ", h("b", { text: String(Math.round((spd || 0) * KT)) }), " kt");
       }
     }));
-    my.dispose = () => { follow(null); traffic?.dispose(); markers?.dispose(); dial.dispose(); };
+    my.dispose = () => follow(null);
   }
 
   function exit() {
@@ -188,5 +192,5 @@ export function createExploreMode(ctx) {
     chrome.stage.replaceChildren();
   }
 
-  return { enter, exit, activeCount: () => run?.count ?? 0 };
+  return { enter, exit, activeCount: () => run?.count ?? 0, screenJets: () => screenJetsOf(world, run?.traffic) };
 }

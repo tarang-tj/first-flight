@@ -49,3 +49,27 @@ test("places: all six exist, are inside the world, and each pose points at its p
     assert.ok(p.altM > p.elevM + 100, `${p.key} camera clear of its own ground`);
   }
 });
+
+test("held keys are dropped when free flight pauses, so Stop following does not drift", async () => {
+  const hs = {};
+  const win = { addEventListener: (t, f) => { (hs[t] ||= []).push(f); }, removeEventListener() {} };
+  globalThis.window = win;
+  const cam = { position: { x: 0, y: 500, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } }, rotation: { set() {} }, updateMatrixWorld() {}, updateProjectionMatrix() {}, fov: 46, matrixWorld: { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] } };
+  const rig = { setSuspended() {}, state: { target: { set() {}, copy() {} }, distance: 0, heading: 0, pitch: 0 } };
+  const { createFreeFly } = await import("../web/world/free-fly.js");
+  const ff = createFreeFly(cam, { addEventListener() {}, removeEventListener() {} }, () => 0, rig);
+  const key = (type, code) => (hs[type] || []).forEach((f) => f({ code, key: code === "KeyW" ? "w" : "d", target: { tagName: "DIV" }, preventDefault() {} }));
+  ff.enable();
+  key("keydown", "KeyW");
+  ff.pause();            // chase takes over; the keyup below is ignored while paused
+  key("keyup", "KeyW");
+  ff.resume();
+  const before = { x: cam.position.x, z: cam.position.z };
+  ff.update(0.5);
+  assert.deepEqual({ x: cam.position.x, z: cam.position.z }, before, "no key is held, the camera must not move");
+  key("keydown", "KeyD"); // pressing another key must not resurrect the stale forward key
+  ff.update(0.5);
+  assert.ok(cam.position.x !== before.x, "D strafes");
+  assert.ok(Math.abs(cam.position.z - before.z) < 1e-6, "and does not also fly forward");
+  delete globalThis.window;
+});

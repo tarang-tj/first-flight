@@ -112,7 +112,7 @@ export function createSkyTraffic(world) {
         seen.add(id);
         let e = jets.get(id);
         if (!e || e.fid !== f.id) {
-          e?.jet.dispose();
+          if (e) { e.jet.dispose(); gone.push(id); } // same airframe, new flight: a follower must let go of the old mesh
           try { e = { jet: world.addJet(id, f.program === "unknown" ? "737" : f.program), fid: f.id, kind: "" }; } catch (err) { console.warn(`[sky] addJet failed: ${err?.message || err}`); continue; }
           jets.set(id, e);
         }

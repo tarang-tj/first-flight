@@ -57,6 +57,36 @@ async function probe(browser, viewport, tag) {
   assert.ok(layout.w >= layout.vw * 0.95 && layout.h >= layout.vh * 0.95, `${tag}: canvas does not fill the viewport ${JSON.stringify(layout)}`);
   assert.notEqual(layout.bg, "rgb(255, 255, 255)", `${tag}: page background is white`);
   assert.ok(layout.sw <= layout.vw + 1, `${tag}: horizontal scroll (${layout.sw} > ${layout.vw})`);
+  // Picking. Make the scene deterministic whatever the clock did while loading: pause, jump to the busiest
+  // moment, "Find a jet" (chases one, so it sits mid-screen), clear the selection by clicking empty sky,
+  // then click the jet and expect the selection chip back. This is the path that broke when the listeners
+  // sat on #ui-root, where canvas clicks never arrive.
+  const phone = viewport.width < 500;
+  const press = (x, y) => (phone ? page.touchscreen.tap(x, y) : page.mouse.click(x, y));
+  const chip = ".ex-sel:not([hidden])";
+  await page.locator('.td-rate[data-rate="1"]').click();
+  if ((await page.locator(".td-play").textContent()) === "Pause") await page.locator(".td-play").click();
+  await page.getByRole("button", { name: "Busiest" }).click();
+  await page.locator(".td-jump").first().click();
+  await page.waitForFunction(() => (window.__ff.sky.activeCount() || 0) > 3, null, { timeout: 30000 }).catch(() => assert.fail(`${tag}: no jets after jumping to the busiest moment`));
+  await page.getByRole("button", { name: "Find a jet" }).click();
+  await page.waitForSelector(chip, { timeout: 5000 }).catch(() => assert.fail(`${tag}: Find a jet did not select a jet`));
+  await page.waitForTimeout(800);
+  const jets = await page.evaluate(() => window.__ff.sky.screenJets());
+  const mid = { x: viewport.width / 2, y: viewport.height / 2 };
+  const target = jets.sort((p, q) => Math.hypot(p.x - mid.x, p.y - mid.y) - Math.hypot(q.x - mid.x, q.y - mid.y))[0];
+  assert.ok(target, `${tag}: followed jet is not on screen`);
+  const empty = [[0.5, 0.25], [0.2, 0.3], [0.8, 0.35], [0.5, 0.2]].map(([fx, fy]) => ({ x: viewport.width * fx, y: viewport.height * fy }))
+    .find((c) => jets.every((j) => Math.hypot(j.x - c.x, j.y - c.y) > 80));
+  assert.ok(empty, `${tag}: no empty sky to click`);
+  await press(empty.x, empty.y);
+  await page.waitForSelector(chip, { state: "detached", timeout: 4000 }).catch(() => assert.fail(`${tag}: clicking empty sky did not clear the selection`));
+  await page.waitForTimeout(600);
+  const again = await page.evaluate(() => window.__ff.sky.screenJets());
+  const t2 = again.find((j) => j.id === target.id) || again[0];
+  assert.ok(t2, `${tag}: jet vanished after deselecting`);
+  await press(t2.x, t2.y);
+  await page.waitForSelector(chip, { timeout: 4000 }).catch(() => assert.fail(`${tag}: clicking a jet at ${Math.round(t2.x)},${Math.round(t2.y)} did not select it`));
   for (const [mode, pattern] of MODES) {
     await page.evaluate((m) => window.__ff.setMode(m), mode);
     await page.waitForTimeout(mode === "year" ? 4000 : 1500);

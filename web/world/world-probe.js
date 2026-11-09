@@ -3,8 +3,10 @@ import * as THREE from "three";
 
 export function attachProbe(world, { renderer, scene, camera, canvas, jets }) {
   /** CSS-pixel position of a local point, plus whether it is in front of the camera. */
-  world.project = (x, y, z) => {
-    const v = new THREE.Vector3(x, y, z).project(camera), r = canvas.getBoundingClientRect();
+  const tmp = new THREE.Vector3();
+  /** Pass `rect` (a cached getBoundingClientRect) when projecting many points, to avoid a layout flush each. */
+  world.project = (x, y, z, rect) => {
+    const v = tmp.set(x, y, z).project(camera), r = rect || canvas.getBoundingClientRect();
     return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height, visible: v.z > -1 && v.z < 1 };
   };
   /** Nearest jet within ~34 px of a client point, else null. */

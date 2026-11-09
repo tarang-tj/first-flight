@@ -3,7 +3,7 @@
 // Months are Pacific time; a flight sits in its takeoff month, so a flight crossing a month end is
 // found by also keeping the previous month loaded.
 
-import { loadJson } from "./data.js";
+import { fetchFresh, createMonthStore } from "./sky-store.js";
 
 const FT = 0.3048, D2R = Math.PI / 180;
 const ZONE = "America/Los_Angeles";
@@ -59,6 +59,19 @@ export function posAt(pts, dt) {
 const wrap180 = (d) => ((d + 540) % 360) - 180;
 const SPAN_S = 20; // look this far each side of now for heading, speed and turn rate
 
+/** Heading of the nearest stretch of track that actually moves, so a parked jet faces the way it will go. Pure. */
+export function parkedHeading(pts, dt) {
+  let at = 0;
+  while (at < pts.length - 1 && pts[at + 1][0] <= dt) at++;
+  for (let k = 0; k < pts.length; k++) {
+    for (const i of [at + k, at - k - 1]) {
+      if (i < 0 || i >= pts.length - 1) continue;
+      if (metres(pts[i][1], pts[i][2], pts[i + 1][1], pts[i + 1][2]) > 15) return bearing(pts[i][1], pts[i][2], pts[i + 1][1], pts[i + 1][2]);
+    }
+  }
+  return 0;
+}
+
 /** Interpolated state at unix time t: {lat,lon,altFt,headingDeg,pitchDeg,rollDeg,groundKt,climbFpm}, or null if not aloft. */
 export function stateAt(f, t) {
   const dt = t - f.t0, pts = f.pts;
@@ -68,12 +81,11 @@ export function stateAt(f, t) {
   const dist = metres(a.lat, a.lon, b.lat, b.lon);
   const mps = span > 0 ? dist / span : 0;
   const moving = dist > 15;
-  const heading = moving ? bearing(a.lat, a.lon, b.lat, b.lon) : (f._h ?? 0);
-  if (moving) f._h = heading; // keep the last good heading while parked
+  const heading = moving ? bearing(a.lat, a.lon, b.lat, b.lon) : parkedHeading(pts, dt);
   const pa = posAt(pts, dt - SPAN_S * 2), pb = posAt(pts, dt + SPAN_S * 2);
   const hA = metres(pa.lat, pa.lon, a.lat, a.lon) > 15 ? bearing(pa.lat, pa.lon, a.lat, a.lon) : heading;
   const hB = metres(b.lat, b.lon, pb.lat, pb.lon) > 15 ? bearing(b.lat, b.lon, pb.lat, pb.lon) : heading;
-  const turn = span > 0 ? wrap180(hB - hA) / (SPAN_S * 2) : 0; // deg per second
+  const turn = span > 0 ? wrap180(hB - hA) / (SPAN_S * 3) : 0; // deg per second: the two bearings are centred 60 s apart
   const bank = Math.atan((mps * turn * D2R) / 9.81) / D2R;
   const climbFtS = span > 0 ? (b.altFt - a.altFt) / span : 0;
   const pitch = mps > 8 ? Math.atan2(climbFtS * FT, mps) / D2R : 0;
@@ -119,37 +131,30 @@ export function memoryFlights(lists, t, windowS = 86400) {
   return out.sort((a, b) => a.age - b.age);
 }
 
-export function createSkyFeed({ base = "web/data/sky", load = loadJson } = {}) {
+export function createSkyFeed({ base = "web/data/sky", load = fetchFresh, maxMonths = 6 } = {}) {
   let index = null;
-  const months = new Map(); // key -> flights[] (resolved only)
-  const inflight = new Map();
-  const getMonth = (key) => {
-    if (months.has(key)) return Promise.resolve(months.get(key));
-    if (!inflight.has(key)) {
-      inflight.set(key, load(`${base}/${key}.json`).then((d) => {
-        inflight.delete(key);
-        if (Array.isArray(d)) months.set(key, d); // a failed load is retried on the next ensure()
-        return d;
-      }));
-    }
-    return inflight.get(key);
-  };
+  const store = createMonthStore({ base, load, max: maxMonths });
+  const lists = (keys) => keys.map((k) => store.get(k));
   return {
     get index() { return index; },
+    get loadedMonths() { return store.keys(); },
+    /** Load index.json. A failed fetch is not remembered, so calling this again retries. */
     async loadIndex() {
       const d = await load(`${base}/index.json`);
-      index = d && Array.isArray(d.months) && Array.isArray(d.span) ? d : null;
+      const okSpan = Array.isArray(d?.span) && Number.isFinite(d.span[0]) && Number.isFinite(d.span[1]) && d.span[1] > d.span[0];
+      index = okSpan && Array.isArray(d.months) ? { ...d, moments: Array.isArray(d.moments) ? d.moments : [] } : null;
       return index;
     },
     /** Start loading what time t needs. Resolves when the needed months are in; prefetch is not awaited. */
     async ensure(t) {
       if (!index) return false;
       const { need, prefetch } = monthsFor(t, index);
-      prefetch.forEach((k) => { getMonth(k); });
-      await Promise.all(need.map(getMonth));
-      return need.every((k) => months.has(k));
+      prefetch.forEach((k) => { store.fetch(k); });
+      await Promise.all(need.map((k) => store.fetch(k)));
+      store.trim([...need, ...prefetch]);
+      return need.every((k) => store.has(k));
     },
-    isReady(t) { return !!index && monthsFor(t, index).need.every((k) => months.has(k)); },
+    isReady(t) { return !!index && monthsFor(t, index).need.every((k) => store.has(k)); },
     /** Of the newest `k` moments, the one with the most jets near Puget Sound (ties go to the newest). Loads their months. */
     async bestMoment(k = 4, km = NEAR_KM) {
       const ms = [...(index?.moments || [])].sort((a, b) => b.t - a.t).slice(0, k);
@@ -166,7 +171,7 @@ export function createSkyFeed({ base = "web/data/sky", load = loadJson } = {}) {
       if (!index) return null;
       const { need, prefetch } = monthsFor(t, index);
       let best = null;
-      for (const k of [...need, ...prefetch]) for (const f of months.get(k) || []) {
+      for (const list of lists([...need, ...prefetch])) for (const f of list || []) {
         if (f.t0 > t && (!best || f.t0 < best) && f.pts?.length && distKm(f.pts[0][1], f.pts[0][2]) <= km) best = f.t0;
       }
       return best;
@@ -174,13 +179,12 @@ export function createSkyFeed({ base = "web/data/sky", load = loadJson } = {}) {
     /** Recently finished flights (for the persistent glow layer). */
     memoryAt(t, windowS = 86400) {
       if (!index) return [];
-      return memoryFlights(monthsFor(t, index).need.map((k) => months.get(k)), t, windowS);
+      return memoryFlights(lists(monthsFor(t, index).need), t, windowS);
     },
     /** Everything aloft at t with interpolated state and tail. Only reads months already loaded. */
     activeAt(t, tailSec = 300) {
       if (!index) return [];
-      const { need } = monthsFor(t, index);
-      return activeFlights(need.map((k) => months.get(k)), t)
+      return activeFlights(lists(monthsFor(t, index).need), t)
         .map((f) => { const s = stateAt(f, t); return s ? { flight: f, ...s, tail: tailPoints(f, t, tailSec) } : null; })
         .filter(Boolean);
     },

@@ -82,3 +82,6 @@ body[data-mode="explore"] .stage { left: 50%; right: auto; transform: translateX
 }
 .td-flash { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translate(-50%, 6px); padding: 6px 12px; border-radius: 999px; background: rgba(7, 9, 13, 0.86); border: 1px solid var(--line); font: 500 12px/1 var(--mono); color: var(--accent); opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s; white-space: nowrap; }
 .td-flash.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+/* Above the touch look pad (fly.css z-index 20), so the Busiest popover and the selection chip can be tapped. */
+body[data-mode="explore"] .stage { z-index: 25; }

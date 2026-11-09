@@ -27,6 +27,9 @@ export function createTimeDial({ clock, index, onChange }) {
     h("i", { style: `flex-grow:${b.weight};--h:${(8 + b.height * 92).toFixed(0)}%`, title: `${b.key}: ${b.flights} flights` })));
   const range = h("input.td-range", { type: "range", min: t0, max: t1, step: 60, value: clock.t, "aria-label": "Moment in time" });
   range.addEventListener("input", () => { clock.set(Number(range.value)); onChange?.("scrub"); });
+  const unfocus = () => range.blur(); // a focused range stops the thumb following the clock and swallows WASD
+  range.addEventListener("change", unfocus);
+  range.addEventListener("pointerup", unfocus);
   
   const play = h("button.td-btn.td-play", { type: "button", "aria-label": "Pause", onclick: () => { clock.toggle(); onChange?.("play"); } });
   const rateBtns = RATES.map((r) => h("button.td-rate", { type: "button", "data-rate": r, onclick: () => { clock.setRate(r); onChange?.("rate"); } }, RATE_LABELS[r]));

@@ -40,3 +40,14 @@ export function openingPose(list, groundAt = () => 0, want = 3, aspect = 1.6) {
   pose.pitchDeg += 9; // aim below the jets so the horizon and terrain fill the lower frame
   return { pose, group: group.length };
 }
+
+/** On-screen jets as [{id, x, y}] in client pixels (boot probe and tests). */
+export function screenJetsOf(world, traffic) {
+  if (!traffic || !world?.project) return [];
+  const out = [];
+  for (const [id, e] of traffic.entries()) {
+    const p = world.project(e.jet.pos.x, e.jet.pos.y, e.jet.pos.z);
+    if (p.visible && p.x > 0 && p.x < innerWidth && p.y > 0 && p.y < innerHeight) out.push({ id, x: p.x, y: p.y });
+  }
+  return out;
+}

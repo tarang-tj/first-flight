@@ -73,7 +73,7 @@ async function boot() {
   ctx.legs = ctx.data.legs;
   const ride = createRide(ctx);
   modes.explore = createExploreMode(ctx);
-  ff.sky = { activeCount: () => modes.explore.activeCount() };
+  ff.sky = { activeCount: () => modes.explore.activeCount(), screenJets: () => modes.explore.screenJets() };
   modes.live = createLiveMode(ctx);
   modes.year = createYearMode(ctx);
   modes.ledger = createLedgerMode(ctx);
